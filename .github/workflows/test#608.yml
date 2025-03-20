@@ -1,0 +1,36 @@
+name: C# tests
+
+on: workflow_dispatch
+
+jobs:
+    experiment:
+        strategy:
+            matrix:
+                os: [ubuntu-latest, macos-14]
+        runs-on: ${{ matrix.os }}
+        outputs:
+            engine-matrix-output: ${{ steps.get-matrices.outputs.engine-matrix-output }}
+            host-matrix-output: ${{ steps.get-matrices.outputs.host-matrix-output }}
+            version-matrix-output: ${{ steps.get-matrices.outputs.version-matrix-output }}
+        steps:
+            - name: pre check
+              run: |
+                  dotnet --info
+                  which dotnet
+            - name: Create global json
+              run: |
+                  dotnet --info
+                  echo -e "\n======================\n"
+                  echo "create new global.json"
+                  dotnet new globaljson --sdk-version 6.0.0 --roll-forward latestFeature
+                  cat global.json
+            
+                
+            - name: Set up dotnet
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: '6.0'
+            - name: post check
+              run: |
+                  dotnet --info
+                  which dotnet
