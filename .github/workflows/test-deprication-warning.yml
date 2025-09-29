@@ -1,4 +1,4 @@
-name: test #531
+name: test deprication warning
 
 on:
   workflow_dispatch:
