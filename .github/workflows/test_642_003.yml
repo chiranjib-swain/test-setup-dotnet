@@ -1,0 +1,51 @@
+name: Repro v3 vs v4 on ubuntu-latest
+
+on:
+  workflow_dispatch:
+
+jobs:
+  v3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: setup-dotnet v3 #1
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: keep dotnet busy briefly
+        run: |
+          (dotnet --info >/dev/null 2>&1 &) || true
+          sleep 2
+
+      - name: setup-dotnet v3 #2
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: setup-dotnet v3 #3
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0.203'
+
+  v4:
+    runs-on: ubuntu-latest
+    steps:
+      - name: setup-dotnet v4 #1
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: keep dotnet busy briefly
+        run: |
+          (dotnet --info >/dev/null 2>&1 &) || true
+          sleep 2
+
+      - name: setup-dotnet v4 #2
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: setup-dotnet v4 #3
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.203'
