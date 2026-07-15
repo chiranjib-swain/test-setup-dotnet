@@ -15,33 +15,28 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Pre-state (dotnet on runner before setup)
+      - name: Pre-state
         shell: bash
         run: |
-          echo "=== BEFORE: dotnet --info ==="
           dotnet --info || true
-          echo "=== BEFORE: dotnet --list-sdks ==="
           dotnet --list-sdks || true
-          echo "=== BEFORE: dotnet --list-runtimes ==="
           dotnet --list-runtimes || true
 
-      - name: Setup .NET SDK 9.0.203 using setup-dotnet@${{ matrix.setup_version }}
-        uses: actions/setup-dotnet@${{ matrix.setup_version }}
+      - name: Setup with v3
+        if: matrix.setup_version == 'v3'
+        uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '9.0.203'
 
-      - name: Post-state (dotnet after setup)
-        shell: bash
-        run: |
-          echo "=== AFTER: dotnet --info ==="
-          dotnet --info || true
-          echo "=== AFTER: dotnet --list-sdks ==="
-          dotnet --list-sdks || true
-          echo "=== AFTER: dotnet --list-runtimes ==="
-          dotnet --list-runtimes || true
+      - name: Setup with v4
+        if: matrix.setup_version == 'v4'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.203'
 
-      - name: Capture environment hints
+      - name: Post-state
         shell: bash
         run: |
-          echo "DOTNET_ROOT=$DOTNET_ROOT"
-          echo "PATH=$PATH"
+          dotnet --info || true
+          dotnet --list-sdks || true
+          dotnet --list-runtimes || true
