@@ -1,0 +1,47 @@
+name: Compare setup-dotnet v3 vs v4 runtime behavior
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    name: "${{ matrix.os }} | ${{ matrix.setup_version }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        setup_version: [v3, v4]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Pre-state (dotnet on runner before setup)
+        shell: bash
+        run: |
+          echo "=== BEFORE: dotnet --info ==="
+          dotnet --info || true
+          echo "=== BEFORE: dotnet --list-sdks ==="
+          dotnet --list-sdks || true
+          echo "=== BEFORE: dotnet --list-runtimes ==="
+          dotnet --list-runtimes || true
+
+      - name: Setup .NET SDK 9.0.203 using setup-dotnet@${{ matrix.setup_version }}
+        uses: actions/setup-dotnet@${{ matrix.setup_version }}
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: Post-state (dotnet after setup)
+        shell: bash
+        run: |
+          echo "=== AFTER: dotnet --info ==="
+          dotnet --info || true
+          echo "=== AFTER: dotnet --list-sdks ==="
+          dotnet --list-sdks || true
+          echo "=== AFTER: dotnet --list-runtimes ==="
+          dotnet --list-runtimes || true
+
+      - name: Capture environment hints
+        shell: bash
+        run: |
+          echo "DOTNET_ROOT=$DOTNET_ROOT"
+          echo "PATH=$PATH"
