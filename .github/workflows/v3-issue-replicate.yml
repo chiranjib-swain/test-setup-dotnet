@@ -1,4 +1,4 @@
-name: Replicate Issue 387 - dotnet.exe File Lock
+name: Replicate Issue 387 - dotnet.exe File Lock (corrected)
 
 on:
   workflow_dispatch:
@@ -11,26 +11,31 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # ── Step 1: v3 installs .NET 8, writes dotnet.exe to C:\Program Files\dotnet\
-      - name: First install — .NET 8 via setup-dotnet@v3
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Confirm first install
+      - name: Download install script
         shell: pwsh
         run: |
-          Write-Host "SDK: $(dotnet --version)"
-          Write-Host "Binary: $env:ProgramFiles\dotnet\dotnet.exe"
+          Invoke-WebRequest `
+            -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" `
+            -OutFile "$env:TEMP\dotnet-install.ps1"
+          # Use a fresh isolated directory — nothing preinstalled here
+          New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
 
-      # ── Step 2: Explicitly hold a write-blocking read lock on dotnet.exe
-      #    in a background runspace.
-      #    FileShare.Read = other readers allowed, but NO writers.
-      #    This is exactly what Windows holds while any process has the EXE mapped.
-      - name: Acquire write-blocking lock on dotnet.exe (background runspace)
+      # ── First install into clean dir: writes dotnet.exe for the first time
+      - name: First install — SDK 8.0.100 (no --skip-non-versioned-files = v3 behavior)
         shell: pwsh
         run: |
-          $target = "$env:ProgramFiles\dotnet\dotnet.exe"
+          & "$env:TEMP\dotnet-install.ps1" `
+            -Version "8.0.100" `
+            -InstallDir "C:\dotnet-test" `
+            -NoPath
+          Write-Host "dotnet.exe written:"
+          Get-Item "C:\dotnet-test\dotnet.exe" | Select-Object Name, LastWriteTime, Length
+
+      # ── Acquire write-blocking lock on that dotnet.exe
+      - name: Lock dotnet.exe in background runspace
+        shell: pwsh
+        run: |
+          $target = "C:\dotnet-test\dotnet.exe"
 
           $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
           $rs.Open()
@@ -38,40 +43,38 @@ jobs:
           $ps.Runspace = $rs
           [void]$ps.AddScript({
             param([string]$path)
-            # Open with Read access, Read-only sharing → writers are blocked
+            # FileShare.Read = allow reads but block all writes
             $fs = [System.IO.File]::Open(
               $path,
               [System.IO.FileMode]::Open,
               [System.IO.FileAccess]::Read,
               [System.IO.FileShare]::Read
             )
-            Write-Host "LOCK ACQUIRED on $path — writes are now blocked"
-            Start-Sleep -Seconds 120     # hold long enough for next step to run
+            Write-Host "LOCK ACQUIRED — writes blocked on $path"
+            Start-Sleep -Seconds 120
             $fs.Dispose()
-            Write-Host "Lock released"
           }).AddArgument($target)
 
           $null = $ps.BeginInvoke()
-          Start-Sleep -Seconds 2         # wait for runspace to acquire the handle
-          Write-Host "Background lock is active. Starting second install..."
+          Start-Sleep -Seconds 2
+          Write-Host "Lock is active. Starting second install..."
 
-      # ── Step 3: v3 tries to overwrite dotnet.exe (no --skip-non-versioned-files)
-      #    Expected error:
-      #    "The process cannot access the file 'dotnet.exe'
-      #     because it is being used by another process."
-      - name: Second install — .NET 10 via setup-dotnet@v3 (EXPECTED TO FAIL)
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '10.0.x'
-        # Remove continue-on-error to let the job fail visibly,
-        # or set to true to observe and continue:
+      # ── Second install: tries to overwrite dotnet.exe → SHOULD FAIL
+      #    This is exactly what v3 did (no --skip-non-versioned-files)
+      - name: Second install — SDK 9.0.100 (EXPECTED: file lock error)
+        shell: pwsh
+        run: |
+          & "$env:TEMP\dotnet-install.ps1" `
+            -Version "9.0.100" `
+            -InstallDir "C:\dotnet-test" `
+            -NoPath
         continue-on-error: true
 
-      - name: Show state after attempted second install
+      - name: Show result
         if: always()
         shell: pwsh
         run: |
-          Write-Host "=== Installed SDKs ==="
-          dotnet --list-sdks
-          Write-Host "=== dotnet.exe ==="
-          Get-Item "$env:ProgramFiles\dotnet\dotnet.exe" | Select-Object Name, LastWriteTime, Length
+          Write-Host "=== SDKs in test dir ==="
+          & "C:\dotnet-test\dotnet.exe" --list-sdks 2>&1 || true
+          Write-Host "=== dotnet.exe last write ==="
+          Get-Item "C:\dotnet-test\dotnet.exe" | Select-Object Name, LastWriteTime
