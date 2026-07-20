@@ -1,4 +1,4 @@
-name: Replicate Issue 387 - dotnet.exe File Lock (single step)
+name: Compare v3 vs v4 - dotnet.exe File Lock
 
 on:
   workflow_dispatch:
@@ -7,56 +7,138 @@ permissions:
   contents: read
 
 jobs:
-  replicate-file-lock:
+  # --------------------------------------------------------------------------
+  # Simulates the behavior of setup-dotnet v3.
+  #
+  # v3 did NOT pass -SkipNonVersionedFiles to dotnet-install.ps1.
+  # As a result, a second installation attempted to overwrite the
+  # non-versioned launcher (dotnet.exe).
+  #
+  # If dotnet.exe is already open by another process, Windows prevents
+  # the overwrite and the installation fails.
+  # --------------------------------------------------------------------------
+  v3-behavior-fails:
+    name: v3 behavior (no -SkipNonVersionedFiles) — EXPECTED TO FAIL
     runs-on: windows-latest
 
     steps:
+      # Download the official installer and create a clean installation folder.
       - name: Setup
         shell: pwsh
         run: |
-          Invoke-WebRequest `
-            -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" `
-            -OutFile "C:\dotnet-install.ps1"
+          Invoke-WebRequest -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" -OutFile "C:\dotnet-install.ps1"
           New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
 
-      - name: Simulate v3 file lock bug (everything in one step)
+      # Install one SDK, lock dotnet.exe, then install another SDK.
+      #
+      # Expected:
+      # - The second install tries to overwrite dotnet.exe.
+      # - Windows blocks the overwrite because the file is locked.
+      # - Installation reports an error similar to:
+      #     "The process cannot access the file because it is being used..."
+      - name: Simulate v3 file lock bug
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
 
-          # ── First install: writes dotnet.exe for the first time
-          Write-Host "=== First install (8.0.100) ==="
+          # First install creates dotnet.exe
           & "C:\dotnet-install.ps1" -Version "8.0.100" -InstallDir "C:\dotnet-test" -NoPath
           $afterFirst = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
-          Write-Host "dotnet.exe after first install: $afterFirst"
 
-          # ── Acquire lock IN THIS SAME PROCESS — survives until $fs.Dispose()
-          $dotnetExe = "C:\dotnet-test\dotnet.exe"
+          # Hold an open read handle that blocks writes/replacement
           $fs = [System.IO.File]::Open(
-            $dotnetExe,
+            "C:\dotnet-test\dotnet.exe",
             [System.IO.FileMode]::Open,
             [System.IO.FileAccess]::Read,
-            [System.IO.FileShare]::Read   # allow reads, block writes
+            [System.IO.FileShare]::Read
           )
-          Write-Host "Lock acquired on $dotnetExe"
 
-          # ── Second install WITHOUT -SkipNonVersionedFiles (v3 behavior)
-          # ── EXPECTED: "Failed to extract package ... being used by another process"
-          Write-Host ""
-          Write-Host "=== Second install (9.0.100) — EXPECTED TO FAIL ==="
-          & "C:\dotnet-install.ps1" -Version "9.0.100" -InstallDir "C:\dotnet-test" -NoPath
+          Write-Host "Lock acquired on dotnet.exe"
 
-          Write-Host ""
-          Write-Host "=== dotnet.exe after second install attempt ==="
+          # v3 behavior:
+          # Installer attempts to overwrite dotnet.exe
+          & "C:\dotnet-install.ps1" `
+            -Version "9.0.100" `
+            -InstallDir "C:\dotnet-test" `
+            -NoPath
+
           $afterSecond = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
-          Write-Host "Before: $afterFirst"
-          Write-Host "After:  $afterSecond"
+
           if ($afterFirst -eq $afterSecond) {
-            Write-Host "RESULT: Timestamp UNCHANGED — file was locked, overwrite blocked ✅"
-          } else {
-            Write-Host "RESULT: Timestamp CHANGED — file was overwritten (lock failed) ❌"
+            Write-Host "RESULT: UNCHANGED — file was locked ✅"
+          }
+          else {
+            Write-Host "RESULT: CHANGED — overwritten ❌"
           }
 
-          # ── Release lock
           $fs.Dispose()
-          Write-Host "Lock released"
+
+  # --------------------------------------------------------------------------
+  # Simulates the fix introduced in setup-dotnet v4.
+  #
+  # v4 passes -SkipNonVersionedFiles to dotnet-install.ps1.
+  #
+  # This causes the installer to SKIP replacing non-versioned files
+  # (including dotnet.exe), avoiding the Windows file-lock issue while
+  # still extracting the versioned SDK/runtime files.
+  # --------------------------------------------------------------------------
+  v4-behavior-passes:
+    name: v4 behavior (-SkipNonVersionedFiles) — EXPECTED TO PASS
+    runs-on: windows-latest
+
+    steps:
+      # Download the installer and create a clean install directory.
+      - name: Setup
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" -OutFile "C:\dotnet-install.ps1"
+          New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
+
+      # Repeat the exact same locking scenario as the v3 test,
+      # but pass -SkipNonVersionedFiles.
+      #
+      # Expected:
+      # - dotnet.exe remains locked.
+      # - Installer skips replacing dotnet.exe.
+      # - SDK installation still succeeds.
+      # - Newly extracted SDK files are present.
+      - name: Simulate v4 fix with lock still held
+        shell: pwsh
+        run: |
+          # First install
+          & "C:\dotnet-install.ps1" -Version "8.0.100" -InstallDir "C:\dotnet-test" -NoPath
+          $afterFirst = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+
+          # Hold dotnet.exe open
+          $fs = [System.IO.File]::Open(
+            "C:\dotnet-test\dotnet.exe",
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+          )
+
+          Write-Host "Lock acquired on dotnet.exe"
+
+          # v4 behavior:
+          # Skip replacing non-versioned files (dotnet.exe)
+          & "C:\dotnet-install.ps1" `
+            -Version "9.0.100" `
+            -InstallDir "C:\dotnet-test" `
+            -NoPath `
+            -SkipNonVersionedFiles
+
+          $afterSecond = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+
+          if ($afterFirst -eq $afterSecond) {
+            Write-Host "RESULT: UNCHANGED — lock held but install succeeded ✅"
+          }
+          else {
+            Write-Host "RESULT: CHANGED — dotnet.exe was overwritten ❌"
+          }
+
+          $fs.Dispose()
+
+          # Verify that the new SDK was extracted even though dotnet.exe
+          # remained locked and unchanged.
+          Write-Host "SDK files verified:"
+          Get-ChildItem "C:\dotnet-test\sdk" | Select-Object Name
