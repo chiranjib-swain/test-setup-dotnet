@@ -6,12 +6,15 @@ on:
 jobs:
   detect-and-use:
     runs-on: ubuntu-latest
+
     steps:
       - name: Show preinstalled versions
         shell: bash
         run: |
           echo "=== SDKs ==="
           dotnet --list-sdks || true
+
+          echo
           echo "=== Runtimes ==="
           dotnet --list-runtimes || true
 
@@ -35,8 +38,40 @@ jobs:
           echo "Detected SDK: $LATEST_SDK"
           echo "Detected Runtime: $LATEST_RT"
 
-      # Optional: install the detected SDK explicitly via setup-dotnet
-      - name: Setup detected SDK
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.203'
+
+      - name: Show versions after setup-dotnet
+        shell: bash
+        run: |
+          echo "=== dotnet --info ==="
+          dotnet --info
+
+          echo
+          echo "=== dotnet executable ==="
+          which dotnet
+          readlink -f "$(which dotnet)" || true
+
+          echo
+          echo "=== SDKs ==="
+          dotnet --list-sdks
+
+          echo
+          echo "=== Runtimes ==="
+          dotnet --list-runtimes
+
+          echo
+          echo "=== Environment ==="
+          echo "DOTNET_ROOT=$DOTNET_ROOT"
+          echo "PATH=$PATH"
+
+          echo
+          echo "=== SDK directory ==="
+          ls -la "$DOTNET_ROOT/sdk" || true
+
+          echo
+          echo "=== Shared runtimes ==="
+          ls -la "$DOTNET_ROOT/shared/Microsoft.NETCore.App" || true
+          ls -la "$DOTNET_ROOT/shared/Microsoft.AspNetCore.App" || true
