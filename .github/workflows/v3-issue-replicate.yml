@@ -1,4 +1,4 @@
-name: Replicate Issue 387 - dotnet.exe File Lock (corrected v2)
+name: Replicate Issue 387 - dotnet.exe File Lock (single step)
 
 on:
   workflow_dispatch:
@@ -11,180 +11,52 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Setup — download install script and create fresh install dir
+      - name: Setup
         shell: pwsh
         run: |
           Invoke-WebRequest `
             -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" `
             -OutFile "C:\dotnet-install.ps1"
-
           New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
 
-      - name: First install — SDK 8.0.100 (no -SkipNonVersionedFiles = v3 behavior)
+      - name: Simulate v3 file lock bug (everything in one step)
         shell: pwsh
         run: |
-          & "C:\dotnet-install.ps1" `
-            -Version "8.0.100" `
-            -InstallDir "C:\dotnet-test" `
-            -NoPath
+          $ErrorActionPreference = "Continue"
 
-          Write-Host "=== dotnet.exe after first install ==="
+          # ── First install: writes dotnet.exe for the first time
+          Write-Host "=== First install (8.0.100) ==="
+          & "C:\dotnet-install.ps1" -Version "8.0.100" -InstallDir "C:\dotnet-test" -NoPath
+          $afterFirst = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+          Write-Host "dotnet.exe after first install: $afterFirst"
 
-          Get-Item "C:\dotnet-test\dotnet.exe" |
-            Select-Object Name, LastWriteTime, Length
-
-      # Each step is a NEW pwsh process — runspaces die with the step.
-      # Create a breakaway child process that survives the step and
-      # continues holding the file lock.
-      - name: Lock dotnet.exe (breakaway from job object)
-        shell: pwsh
-        run: |
-          $target = "C:\dotnet-test\dotnet.exe"
-          $lockScript = "C:\dotnet-test\hold-lock.ps1"
-
-          @'
+          # ── Acquire lock IN THIS SAME PROCESS — survives until $fs.Dispose()
+          $dotnetExe = "C:\dotnet-test\dotnet.exe"
           $fs = [System.IO.File]::Open(
-              'C:\dotnet-test\dotnet.exe',
-              [System.IO.FileMode]::Open,
-              [System.IO.FileAccess]::Read,
-              [System.IO.FileShare]::Read
+            $dotnetExe,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read   # allow reads, block writes
           )
+          Write-Host "Lock acquired on $dotnetExe"
 
-          Write-Host "LOCK HELD"
-          Start-Sleep -Seconds 180
-          $fs.Dispose()
-          '@ | Out-File -FilePath $lockScript -Encoding UTF8
+          # ── Second install WITHOUT -SkipNonVersionedFiles (v3 behavior)
+          # ── EXPECTED: "Failed to extract package ... being used by another process"
+          Write-Host ""
+          Write-Host "=== Second install (9.0.100) — EXPECTED TO FAIL ==="
+          & "C:\dotnet-install.ps1" -Version "9.0.100" -InstallDir "C:\dotnet-test" -NoPath
 
-          # Use Win32 CreateProcess with CREATE_BREAKAWAY_FROM_JOB
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-
-          public class NativeProcess
-          {
-              [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-              public static extern bool CreateProcess(
-                  string lpApplicationName,
-                  string lpCommandLine,
-                  IntPtr lpProcessAttributes,
-                  IntPtr lpThreadAttributes,
-                  bool bInheritHandles,
-                  uint dwCreationFlags,
-                  IntPtr lpEnvironment,
-                  string lpCurrentDirectory,
-                  ref STARTUPINFO lpStartupInfo,
-                  out PROCESS_INFORMATION lpProcessInformation);
-
-              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-              public struct STARTUPINFO
-              {
-                  public int cb;
-                  public string lpReserved;
-                  public string lpDesktop;
-                  public string lpTitle;
-                  public int dwX;
-                  public int dwY;
-                  public int dwXSize;
-                  public int dwYSize;
-                  public int dwXCountChars;
-                  public int dwYCountChars;
-                  public int dwFillAttribute;
-                  public int dwFlags;
-                  public short wShowWindow;
-                  public short cbReserved2;
-                  public IntPtr lpReserved2;
-                  public IntPtr hStdInput;
-                  public IntPtr hStdOutput;
-                  public IntPtr hStdError;
-              }
-
-              [StructLayout(LayoutKind.Sequential)]
-              public struct PROCESS_INFORMATION
-              {
-                  public IntPtr hProcess;
-                  public IntPtr hThread;
-                  public int dwProcessId;
-                  public int dwThreadId;
-              }
-          }
-          '@
-
-          $si = New-Object NativeProcess+STARTUPINFO
-          $si.cb = [System.Runtime.InteropServices.Marshal]::SizeOf($si)
-
-          $pi = New-Object NativeProcess+PROCESS_INFORMATION
-
-          $cmd = "pwsh -NoProfile -NonInteractive -File `"$lockScript`""
-
-          $CREATE_BREAKAWAY_FROM_JOB = 0x01000000
-
-          $created = [NativeProcess]::CreateProcess(
-            $null,
-            $cmd,
-            [IntPtr]::Zero,
-            [IntPtr]::Zero,
-            $false,
-            $CREATE_BREAKAWAY_FROM_JOB,
-            [IntPtr]::Zero,
-            $null,
-            [ref]$si,
-            [ref]$pi
-          )
-
-          if (-not $created) {
-            throw "CreateProcess failed with Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
-          }
-
-          Start-Sleep -Seconds 3
-
-          Write-Host "Lock process PID=$($pi.dwProcessId) (breakaway from job object)"
-
-          # Verify the lock is held
-          try {
-            $test = [System.IO.File]::Open(
-              $target,
-              [System.IO.FileMode]::Open,
-              [System.IO.FileAccess]::Write,
-              [System.IO.FileShare]::None
-            )
-
-            $test.Dispose()
-            Write-Warning "Lock verification FAILED — file was writable!"
-          }
-          catch {
-            Write-Host "Lock verification PASSED — file is write-locked: $($_.Exception.Message)"
-          }
-
-          "LOCK_PID=$($pi.dwProcessId)" | Out-File -Append $env:GITHUB_ENV
-
-      # install-dotnet.ps1 WITHOUT -SkipNonVersionedFiles tries to overwrite dotnet.exe
-      # → EXPECTED FAILURE: "file is being used by another process"
-      - name: Second install — SDK 9.0.100 (EXPECTED TO FAIL — file lock)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          & "C:\dotnet-install.ps1" `
-            -Version "9.0.100" `
-            -InstallDir "C:\dotnet-test" `
-            -NoPath
-
-      - name: Show result
-        if: always()
-        shell: pwsh
-        run: |
+          Write-Host ""
           Write-Host "=== dotnet.exe after second install attempt ==="
-
-          Get-Item "C:\dotnet-test\dotnet.exe" |
-            Select-Object Name, LastWriteTime, Length
-
-          Write-Host "=== SDKs ==="
-          & "C:\dotnet-test\dotnet.exe" --list-sdks 2>&1
-
-      - name: Kill lock process
-        if: always()
-        shell: pwsh
-        run: |
-          if ($env:LOCK_PID) {
-            Stop-Process -Id $env:LOCK_PID -Force -ErrorAction SilentlyContinue
-            Write-Host "Killed lock process PID=$($env:LOCK_PID)"
+          $afterSecond = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+          Write-Host "Before: $afterFirst"
+          Write-Host "After:  $afterSecond"
+          if ($afterFirst -eq $afterSecond) {
+            Write-Host "RESULT: Timestamp UNCHANGED — file was locked, overwrite blocked ✅"
+          } else {
+            Write-Host "RESULT: Timestamp CHANGED — file was overwritten (lock failed) ❌"
           }
+
+          # ── Release lock
+          $fs.Dispose()
+          Write-Host "Lock released"
