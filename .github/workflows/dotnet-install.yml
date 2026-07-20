@@ -1,0 +1,42 @@
+name: Dotnet Install Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  detect-and-use:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show preinstalled versions
+        shell: bash
+        run: |
+          echo "=== SDKs ==="
+          dotnet --list-sdks || true
+          echo "=== Runtimes ==="
+          dotnet --list-runtimes || true
+
+      - name: Detect latest SDK and latest Microsoft.NETCore.App runtime
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Latest SDK from image
+          LATEST_SDK="$(dotnet --list-sdks | awk '{print $1}' | sort -V | tail -1)"
+
+          # Latest Microsoft.NETCore.App runtime from image
+          LATEST_RT="$(dotnet --list-runtimes \
+            | awk '$1=="Microsoft.NETCore.App"{print $2}' \
+            | sort -V | tail -1)"
+
+          echo "latest_sdk=$LATEST_SDK" >> "$GITHUB_OUTPUT"
+          echo "latest_runtime=$LATEST_RT" >> "$GITHUB_OUTPUT"
+
+          echo "Detected SDK: $LATEST_SDK"
+          echo "Detected Runtime: $LATEST_RT"
+
+      # Optional: install the detected SDK explicitly via setup-dotnet
+      - name: Setup detected SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.203'
