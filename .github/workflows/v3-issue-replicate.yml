@@ -61,7 +61,7 @@ jobs:
 
       # ── Second install: tries to overwrite dotnet.exe → SHOULD FAIL
       #    This is exactly what v3 did (no --skip-non-versioned-files)
-      - name: Second install — SDK 9.0.100 (EXPECTED: file lock error)
+      - name: Second install — SDK 9.0.100 (EXPECTED- file lock error)
         shell: pwsh
         run: |
           & "$env:TEMP\dotnet-install.ps1" `
