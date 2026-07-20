@@ -29,49 +29,122 @@ jobs:
             -NoPath
 
           Write-Host "=== dotnet.exe after first install ==="
+
           Get-Item "C:\dotnet-test\dotnet.exe" |
             Select-Object Name, LastWriteTime, Length
 
       # Each step is a NEW pwsh process — runspaces die with the step.
-      # Use Start-Process to launch a SEPARATE persistent process that
-      # survives across step boundaries and holds the file handle.
-      - name: Lock dotnet.exe via a separate persistent process
+      # Create a breakaway child process that survives the step and
+      # continues holding the file lock.
+      - name: Lock dotnet.exe (breakaway from job object)
         shell: pwsh
         run: |
           $target = "C:\dotnet-test\dotnet.exe"
-
-          # Write a small lock script to disk
           $lockScript = "C:\dotnet-test\hold-lock.ps1"
 
-          @"
-          `$fs = [System.IO.File]::Open(
-              '$target',
+          @'
+          $fs = [System.IO.File]::Open(
+              'C:\dotnet-test\dotnet.exe',
               [System.IO.FileMode]::Open,
               [System.IO.FileAccess]::Read,
-              [System.IO.FileShare]::Read   # allow reads, block ALL writes
+              [System.IO.FileShare]::Read
           )
-          Write-Host "LOCK HELD on $target"
-          Start-Sleep -Seconds 180          # hold for 3 minutes
-          `$fs.Dispose()
-          Write-Host "Lock released"
-          "@ | Out-File -FilePath $lockScript -Encoding UTF8
 
-          # Start as a CHILD PROCESS — survives this step's exit
-          $proc = Start-Process `
-            -FilePath "pwsh" `
-            -ArgumentList "-NoProfile", "-NonInteractive", "-File", $lockScript `
-            -PassThru `
-            -NoNewWindow
+          Write-Host "LOCK HELD"
+          Start-Sleep -Seconds 180
+          $fs.Dispose()
+          '@ | Out-File -FilePath $lockScript -Encoding UTF8
 
-          Write-Host "Lock process started, PID=$($proc.Id)"
-          Start-Sleep -Seconds 3   # wait for child process to open the file
+          # Use Win32 CreateProcess with CREATE_BREAKAWAY_FROM_JOB
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
 
-          # Verify the lock is held (optional but useful for diagnosis)
+          public class NativeProcess
+          {
+              [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+              public static extern bool CreateProcess(
+                  string lpApplicationName,
+                  string lpCommandLine,
+                  IntPtr lpProcessAttributes,
+                  IntPtr lpThreadAttributes,
+                  bool bInheritHandles,
+                  uint dwCreationFlags,
+                  IntPtr lpEnvironment,
+                  string lpCurrentDirectory,
+                  ref STARTUPINFO lpStartupInfo,
+                  out PROCESS_INFORMATION lpProcessInformation);
+
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+              public struct STARTUPINFO
+              {
+                  public int cb;
+                  public string lpReserved;
+                  public string lpDesktop;
+                  public string lpTitle;
+                  public int dwX;
+                  public int dwY;
+                  public int dwXSize;
+                  public int dwYSize;
+                  public int dwXCountChars;
+                  public int dwYCountChars;
+                  public int dwFillAttribute;
+                  public int dwFlags;
+                  public short wShowWindow;
+                  public short cbReserved2;
+                  public IntPtr lpReserved2;
+                  public IntPtr hStdInput;
+                  public IntPtr hStdOutput;
+                  public IntPtr hStdError;
+              }
+
+              [StructLayout(LayoutKind.Sequential)]
+              public struct PROCESS_INFORMATION
+              {
+                  public IntPtr hProcess;
+                  public IntPtr hThread;
+                  public int dwProcessId;
+                  public int dwThreadId;
+              }
+          }
+          '@
+
+          $si = New-Object NativeProcess+STARTUPINFO
+          $si.cb = [System.Runtime.InteropServices.Marshal]::SizeOf($si)
+
+          $pi = New-Object NativeProcess+PROCESS_INFORMATION
+
+          $cmd = "pwsh -NoProfile -NonInteractive -File `"$lockScript`""
+
+          $CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+          $created = [NativeProcess]::CreateProcess(
+            $null,
+            $cmd,
+            [IntPtr]::Zero,
+            [IntPtr]::Zero,
+            $false,
+            $CREATE_BREAKAWAY_FROM_JOB,
+            [IntPtr]::Zero,
+            $null,
+            [ref]$si,
+            [ref]$pi
+          )
+
+          if (-not $created) {
+            throw "CreateProcess failed with Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+          }
+
+          Start-Sleep -Seconds 3
+
+          Write-Host "Lock process PID=$($pi.dwProcessId) (breakaway from job object)"
+
+          # Verify the lock is held
           try {
             $test = [System.IO.File]::Open(
               $target,
               [System.IO.FileMode]::Open,
-              [System.IO.FileAccess]::Write,   # try to write → should fail
+              [System.IO.FileAccess]::Write,
               [System.IO.FileShare]::None
             )
 
@@ -82,19 +155,18 @@ jobs:
             Write-Host "Lock verification PASSED — file is write-locked: $($_.Exception.Message)"
           }
 
-          # Persist PID for cleanup step
-          "LOCK_PID=$($proc.Id)" | Out-File -Append $env:GITHUB_ENV
+          "LOCK_PID=$($pi.dwProcessId)" | Out-File -Append $env:GITHUB_ENV
 
       # install-dotnet.ps1 WITHOUT -SkipNonVersionedFiles tries to overwrite dotnet.exe
       # → EXPECTED FAILURE: "file is being used by another process"
       - name: Second install — SDK 9.0.100 (EXPECTED TO FAIL — file lock)
         shell: pwsh
+        continue-on-error: true
         run: |
           & "C:\dotnet-install.ps1" `
             -Version "9.0.100" `
             -InstallDir "C:\dotnet-test" `
             -NoPath
-        continue-on-error: true
 
       - name: Show result
         if: always()
