@@ -1,0 +1,77 @@
+name: Replicate Issue 387 - dotnet.exe File Lock
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replicate-file-lock:
+    runs-on: windows-latest
+
+    steps:
+      # ── Step 1: v3 installs .NET 8, writes dotnet.exe to C:\Program Files\dotnet\
+      - name: First install — .NET 8 via setup-dotnet@v3
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Confirm first install
+        shell: pwsh
+        run: |
+          Write-Host "SDK: $(dotnet --version)"
+          Write-Host "Binary: $env:ProgramFiles\dotnet\dotnet.exe"
+
+      # ── Step 2: Explicitly hold a write-blocking read lock on dotnet.exe
+      #    in a background runspace.
+      #    FileShare.Read = other readers allowed, but NO writers.
+      #    This is exactly what Windows holds while any process has the EXE mapped.
+      - name: Acquire write-blocking lock on dotnet.exe (background runspace)
+        shell: pwsh
+        run: |
+          $target = "$env:ProgramFiles\dotnet\dotnet.exe"
+
+          $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+          $rs.Open()
+          $ps = [System.Management.Automation.PowerShell]::Create()
+          $ps.Runspace = $rs
+          [void]$ps.AddScript({
+            param([string]$path)
+            # Open with Read access, Read-only sharing → writers are blocked
+            $fs = [System.IO.File]::Open(
+              $path,
+              [System.IO.FileMode]::Open,
+              [System.IO.FileAccess]::Read,
+              [System.IO.FileShare]::Read
+            )
+            Write-Host "LOCK ACQUIRED on $path — writes are now blocked"
+            Start-Sleep -Seconds 120     # hold long enough for next step to run
+            $fs.Dispose()
+            Write-Host "Lock released"
+          }).AddArgument($target)
+
+          $null = $ps.BeginInvoke()
+          Start-Sleep -Seconds 2         # wait for runspace to acquire the handle
+          Write-Host "Background lock is active. Starting second install..."
+
+      # ── Step 3: v3 tries to overwrite dotnet.exe (no --skip-non-versioned-files)
+      #    Expected error:
+      #    "The process cannot access the file 'dotnet.exe'
+      #     because it is being used by another process."
+      - name: Second install — .NET 10 via setup-dotnet@v3 (EXPECTED TO FAIL)
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '10.0.x'
+        # Remove continue-on-error to let the job fail visibly,
+        # or set to true to observe and continue:
+        continue-on-error: true
+
+      - name: Show state after attempted second install
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== Installed SDKs ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet.exe ==="
+          Get-Item "$env:ProgramFiles\dotnet\dotnet.exe" | Select-Object Name, LastWriteTime, Length
