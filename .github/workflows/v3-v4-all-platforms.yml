@@ -1,0 +1,229 @@
+name: Compare v3 vs v4 - dotnet File Lock (All Platforms)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # WINDOWS — Mandatory file locking (enforced by OS kernel)
+  #
+  # v3: ZipFileExtensions::ExtractToFile throws IOException when
+  #     dotnet.exe is open — installation FAILS.
+  # v4: -SkipNonVersionedFiles skips dotnet.exe entirely —
+  #     installation PASSES even with the lock held.
+  # ============================================================
+
+  v3-behavior-windows:
+    name: "Windows | v3 (no -SkipNonVersionedFiles) — EXPECTED TO FAIL"
+    runs-on: windows-latest
+    steps:
+      - name: Setup
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" -OutFile "C:\dotnet-install.ps1"
+          New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
+
+      - name: Simulate v3 file lock bug
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          & "C:\dotnet-install.ps1" -Version "8.0.100" -InstallDir "C:\dotnet-test" -NoPath
+          $afterFirst = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+
+          $fs = [System.IO.File]::Open(
+            "C:\dotnet-test\dotnet.exe",
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+          )
+          Write-Host "Lock acquired on dotnet.exe"
+
+          # v3: no -SkipNonVersionedFiles — ExtractToFile throws IOException
+          & "C:\dotnet-install.ps1" -Version "9.0.100" -InstallDir "C:\dotnet-test" -NoPath
+
+          $afterSecond = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+          if ($afterFirst -eq $afterSecond) { Write-Host "RESULT: UNCHANGED — file was locked ✅" }
+          else { Write-Host "RESULT: CHANGED — overwritten ❌" }
+          $fs.Dispose()
+
+  v4-behavior-windows:
+    name: "Windows | v4 (-SkipNonVersionedFiles) — EXPECTED TO PASS"
+    runs-on: windows-latest
+    steps:
+      - name: Setup
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1" -OutFile "C:\dotnet-install.ps1"
+          New-Item -ItemType Directory -Path "C:\dotnet-test" -Force
+
+      - name: Simulate v4 fix with lock still held
+        shell: pwsh
+        run: |
+          & "C:\dotnet-install.ps1" -Version "8.0.100" -InstallDir "C:\dotnet-test" -NoPath
+          $afterFirst = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+
+          $fs = [System.IO.File]::Open(
+            "C:\dotnet-test\dotnet.exe",
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+          )
+          Write-Host "Lock acquired on dotnet.exe"
+
+          # v4: -SkipNonVersionedFiles — dotnet.exe is never passed to ExtractToFile
+          & "C:\dotnet-install.ps1" -Version "9.0.100" -InstallDir "C:\dotnet-test" -NoPath -SkipNonVersionedFiles
+
+          $afterSecond = (Get-Item "C:\dotnet-test\dotnet.exe").LastWriteTime
+          if ($afterFirst -eq $afterSecond) { Write-Host "RESULT: UNCHANGED — lock held but install succeeded ✅" }
+          else { Write-Host "RESULT: CHANGED — dotnet.exe was overwritten ❌" }
+          $fs.Dispose()
+
+          Write-Host "SDK files verified:"
+          Get-ChildItem "C:\dotnet-test\sdk" | Select-Object Name
+
+  # ============================================================
+  # UBUNTU — Advisory file locking (no mandatory kernel lock)
+  #
+  # No IOException on Linux — cp simply overwrites the file.
+  # Test uses SHA-256 hash to verify whether dotnet was replaced.
+  #
+  # v3: dotnet overwritten silently (hash changes) — unsafe
+  # v4: dotnet preserved (hash unchanged) — safe
+  # ============================================================
+
+  v3-behavior-ubuntu:
+    name: "Ubuntu | v3 (no --skip-non-versioned-files) — dotnet overwritten"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup
+        run: |
+          curl -sSL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          chmod +x /tmp/dotnet-install.sh
+          mkdir -p /tmp/dotnet-test
+
+      - name: Simulate v3 overwrite behavior
+        run: |
+          /tmp/dotnet-install.sh --version 8.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_before=$(sha256sum /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash before: $hash_before"
+
+          # v3: no --skip-non-versioned-files → cp overwrites dotnet unconditionally
+          /tmp/dotnet-install.sh --version 9.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_after=$(sha256sum /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash after:  $hash_after"
+
+          if [ "$hash_before" = "$hash_after" ]; then
+            echo "RESULT: UNCHANGED ✅ (unexpected)"
+          else
+            echo "RESULT: CHANGED — dotnet was silently overwritten ⚠️ (expected v3 behavior)"
+          fi
+
+          echo "SDK files:"
+          ls /tmp/dotnet-test/sdk/
+
+  v4-behavior-ubuntu:
+    name: "Ubuntu | v4 (--skip-non-versioned-files) — dotnet preserved"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup
+        run: |
+          curl -sSL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          chmod +x /tmp/dotnet-install.sh
+          mkdir -p /tmp/dotnet-test
+
+      - name: Simulate v4 skip behavior
+        run: |
+          /tmp/dotnet-install.sh --version 8.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_before=$(sha256sum /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash before: $hash_before"
+
+          # v4: --skip-non-versioned-files → cp skipped when file already exists
+          /tmp/dotnet-install.sh --version 9.0.100 --install-dir /tmp/dotnet-test --no-path --skip-non-versioned-files
+
+          hash_after=$(sha256sum /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash after:  $hash_after"
+
+          if [ "$hash_before" = "$hash_after" ]; then
+            echo "RESULT: UNCHANGED — dotnet preserved, install succeeded ✅"
+          else
+            echo "RESULT: CHANGED — dotnet was overwritten ❌"
+          fi
+
+          echo "SDK files:"
+          ls /tmp/dotnet-test/sdk/
+
+  # ============================================================
+  # macOS — Same advisory-lock behavior as Ubuntu.
+  # Uses shasum -a 256 (native macOS, no coreutils needed).
+  # ============================================================
+
+  v3-behavior-macos:
+    name: "macOS | v3 (no --skip-non-versioned-files) — dotnet overwritten"
+    runs-on: macos-latest
+    steps:
+      - name: Setup
+        run: |
+          curl -sSL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          chmod +x /tmp/dotnet-install.sh
+          mkdir -p /tmp/dotnet-test
+
+      - name: Simulate v3 overwrite behavior
+        run: |
+          /tmp/dotnet-install.sh --version 8.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_before=$(shasum -a 256 /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash before: $hash_before"
+
+          # v3: no --skip-non-versioned-files → cp overwrites dotnet unconditionally
+          /tmp/dotnet-install.sh --version 9.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_after=$(shasum -a 256 /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash after:  $hash_after"
+
+          if [ "$hash_before" = "$hash_after" ]; then
+            echo "RESULT: UNCHANGED ✅ (unexpected)"
+          else
+            echo "RESULT: CHANGED — dotnet was silently overwritten ⚠️ (expected v3 behavior)"
+          fi
+
+          echo "SDK files:"
+          ls /tmp/dotnet-test/sdk/
+
+  v4-behavior-macos:
+    name: "macOS | v4 (--skip-non-versioned-files) — dotnet preserved"
+    runs-on: macos-latest
+    steps:
+      - name: Setup
+        run: |
+          curl -sSL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          chmod +x /tmp/dotnet-install.sh
+          mkdir -p /tmp/dotnet-test
+
+      - name: Simulate v4 skip behavior
+        run: |
+          /tmp/dotnet-install.sh --version 8.0.100 --install-dir /tmp/dotnet-test --no-path
+
+          hash_before=$(shasum -a 256 /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash before: $hash_before"
+
+          # v4: --skip-non-versioned-files → cp skipped when file already exists
+          /tmp/dotnet-install.sh --version 9.0.100 --install-dir /tmp/dotnet-test --no-path --skip-non-versioned-files
+
+          hash_after=$(shasum -a 256 /tmp/dotnet-test/dotnet | awk '{print $1}')
+          echo "Hash after:  $hash_after"
+
+          if [ "$hash_before" = "$hash_after" ]; then
+            echo "RESULT: UNCHANGED — dotnet preserved, install succeeded ✅"
+          else
+            echo "RESULT: CHANGED — dotnet was overwritten ❌"
+          fi
+
+          echo "SDK files:"
+          ls /tmp/dotnet-test/sdk/
