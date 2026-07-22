@@ -1,0 +1,43 @@
+name: Repro setup-dotnet v3 only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repro:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Show preinstalled dotnet (before)
+        shell: bash
+        run: |
+          echo "=== dotnet --info (before) ==="
+          dotnet --info || true
+          echo "=== dotnet --list-sdks (before) ==="
+          dotnet --list-sdks || true
+          echo "=== dotnet --list-runtimes (before) ==="
+          dotnet --list-runtimes || true
+      - name: Setup .NET SDK 9.0.203 with setup-dotnet@v4
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0.203'
+
+      - name: Show dotnet after setup
+        shell: bash
+        run: |
+          echo "=== dotnet --info (after) ==="
+          dotnet --info
+          echo "=== dotnet --list-sdks (after) ==="
+          dotnet --list-sdks
+          echo "=== dotnet --list-runtimes (after) ==="
+          dotnet --list-runtimes
+      - name: Print important env vars
+        shell: bash
+        run: |
+          echo "DOTNET_ROOT=$DOTNET_ROOT"
+          echo "PATH=$PATH"
