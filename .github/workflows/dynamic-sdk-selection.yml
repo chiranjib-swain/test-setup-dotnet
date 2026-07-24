@@ -1,0 +1,191 @@
+name: Dynamic SDK/Runtime Selection - All Approaches
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Approach 1 — setup-dotnet wildcards
+  # dotnet-version patterns resolve at workflow runtime via the
+  # releases index API — no hardcoded patch numbers needed.
+  # ──────────────────────────────────────────────────────────────
+  approach-1-wildcard:
+    name: "Approach 1 | setup-dotnet wildcard | ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - version: "10.0.x"
+    steps:
+      - name: "Install latest 10.0.x (no hardcoded patch)"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Show resolved SDK and installed runtimes
+        shell: bash
+        run: |
+          echo "=== Active SDK (dotnet --version) ==="
+          dotnet --version
+          echo ""
+          echo "=== All installed SDKs ==="
+          dotnet --list-sdks
+          echo ""
+          echo "=== All installed runtimes ==="
+          dotnet --list-runtimes
+
+  # ──────────────────────────────────────────────────────────────
+  # Approach 2 — Preinstalled SDK (no setup-dotnet at all)
+  # Runners ship with multiple SDKs. Without global.json the
+  # muxer picks the latest installed one automatically.
+  # ──────────────────────────────────────────────────────────────
+  approach-2-preinstalled:
+    name: "Approach 2 | Preinstalled SDK (no action) | ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Show preinstalled SDKs and active version (no setup-dotnet)
+        shell: bash
+        run: |
+          echo "=== Active SDK selected by muxer (latest installed) ==="
+          dotnet --version
+          echo ""
+          echo "=== All preinstalled SDKs ==="
+          dotnet --list-sdks
+          echo ""
+          echo "=== All preinstalled runtimes ==="
+          dotnet --list-runtimes
+
+  # ──────────────────────────────────────────────────────────────
+  # Approach 3 (Linux/macOS) — Shell query for --fx-version
+  # Dynamically captures the latest installed runtime at runtime
+  # and exposes it as a step output for downstream steps.
+  # ──────────────────────────────────────────────────────────────
+  approach-3-bash:
+    name: "Approach 3 | Shell query --fx-version (bash) | ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Capture latest SDK and runtime dynamically
+        id: dotnet-info
+        run: |
+          LATEST_SDK=$(dotnet --list-sdks | sort -V | tail -1 | awk '{print $1}')
+          LATEST_RT=$(dotnet --list-runtimes \
+            | grep "^Microsoft.NETCore.App" \
+            | sort -V \
+            | tail -1 \
+            | awk '{print $2}')
+          echo "sdk=$LATEST_SDK"     >> $GITHUB_OUTPUT
+          echo "runtime=$LATEST_RT" >> $GITHUB_OUTPUT
+          echo "Latest SDK:     $LATEST_SDK"
+          echo "Latest Runtime: $LATEST_RT"
+
+      - name: Use captured values in a downstream step
+        run: |
+          echo "SDK from output:     ${{ steps.dotnet-info.outputs.sdk }}"
+          echo "Runtime from output: ${{ steps.dotnet-info.outputs.runtime }}"
+          echo ""
+          echo "Equivalent command:"
+          echo "  dotnet exec --fx-version ${{ steps.dotnet-info.outputs.runtime }} myapp.dll"
+
+  # ──────────────────────────────────────────────────────────────
+  # Approach 3 (Windows) — Same query in PowerShell
+  # ──────────────────────────────────────────────────────────────
+  approach-3-powershell:
+    name: "Approach 3 | Shell query --fx-version (pwsh) | windows-latest"
+    runs-on: windows-latest
+    steps:
+      - name: Capture latest SDK and runtime dynamically
+        id: dotnet-info
+        shell: pwsh
+        run: |
+          $latestSdk = (dotnet --list-sdks | Sort-Object | Select-Object -Last 1).Split(' ')[0]
+          $latestRt  = (dotnet --list-runtimes |
+            Where-Object { $_ -match '^Microsoft\.NETCore\.App' } |
+            Sort-Object |
+            Select-Object -Last 1).Split(' ')[1]
+          "sdk=$latestSdk"     | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+          "runtime=$latestRt"  | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+          Write-Host "Latest SDK:     $latestSdk"
+          Write-Host "Latest Runtime: $latestRt"
+
+      - name: Use captured values in a downstream step
+        shell: pwsh
+        run: |
+          Write-Host "SDK from output:     ${{ steps.dotnet-info.outputs.sdk }}"
+          Write-Host "Runtime from output: ${{ steps.dotnet-info.outputs.runtime }}"
+          Write-Host ""
+          Write-Host "Equivalent command:"
+          Write-Host "  dotnet exec --fx-version ${{ steps.dotnet-info.outputs.runtime }} myapp.dll"
+
+  # ──────────────────────────────────────────────────────────────
+  # Approach 4 — global.json with rollForward policies
+  # Shows three different rollForward behaviours side by side.
+  # ──────────────────────────────────────────────────────────────
+  approach-4-global-json:
+    name: "Approach 4 | global.json rollForward | ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: "latestPatch — latest patch of 10.0"
+        run: |
+          mkdir -p /tmp/test-latestPatch
+          echo '{"sdk":{"version":"10.0.0","rollForward":"latestPatch"}}' \
+            > /tmp/test-latestPatch/global.json
+          echo "global.json content:"
+          cat /tmp/test-latestPatch/global.json
+          echo ""
+          echo "SDK selected:"
+          cd /tmp/test-latestPatch && dotnet --version
+        shell: bash
+
+      - name: "latestMinor — latest minor of major 8"
+        run: |
+          mkdir -p /tmp/test-latestMinor
+          echo '{"sdk":{"version":"8.0.0","rollForward":"latestMinor"}}' \
+            > /tmp/test-latestMinor/global.json
+          echo "global.json content:"
+          cat /tmp/test-latestMinor/global.json
+          echo ""
+          echo "SDK selected:"
+          cd /tmp/test-latestMinor && dotnet --version
+        shell: bash
+
+      - name: "latestMajor — absolute latest installed SDK"
+        run: |
+          mkdir -p /tmp/test-latestMajor
+          echo '{"sdk":{"version":"0.0.0","rollForward":"latestMajor"}}' \
+            > /tmp/test-latestMajor/global.json
+          echo "global.json content:"
+          cat /tmp/test-latestMajor/global.json
+          echo ""
+          echo "SDK selected:"
+          cd /tmp/test-latestMajor && dotnet --version
+        shell: bash
+
+      - name: "disable — exact match only (expect failure if not installed)"
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/test-disable
+          echo '{"sdk":{"version":"7.0.100","rollForward":"disable"}}' \
+            > /tmp/test-disable/global.json
+          echo "global.json content:"
+          cat /tmp/test-disable/global.json
+          echo ""
+          echo "SDK selected (will fail — 7.0.100 not installed):"
+          cd /tmp/test-disable && dotnet --version
+        shell: bash
