@@ -19,8 +19,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - version: "10.0.x"
     steps:
       - name: "Install latest 10.0.x (no hardcoded patch)"
         uses: actions/setup-dotnet@v4
@@ -115,8 +113,8 @@ jobs:
             Where-Object { $_ -match '^Microsoft\.NETCore\.App' } |
             Sort-Object |
             Select-Object -Last 1).Split(' ')[1]
-          "sdk=$latestSdk"     | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
-          "runtime=$latestRt"  | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+          "sdk=$latestSdk"    | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+          "runtime=$latestRt" | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding utf8
           Write-Host "Latest SDK:     $latestSdk"
           Write-Host "Latest Runtime: $latestRt"
 
@@ -131,7 +129,11 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────
   # Approach 4 — global.json with rollForward policies
-  # Shows three different rollForward behaviours side by side.
+  #
+  # FIX: latestPatch version must match an installed feature band.
+  # Image has: 10.0.110 (1xx), 10.0.204 (2xx), 10.0.302 (3xx)
+  # Using 10.0.300 targets the 3xx band → resolves to 10.0.302.
+  # Using 10.0.0 targets the 0xx band → no match → exit 155.
   # ──────────────────────────────────────────────────────────────
   approach-4-global-json:
     name: "Approach 4 | global.json rollForward | ${{ matrix.os }}"
@@ -141,51 +143,40 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - name: "latestPatch — latest patch of 10.0"
+      - name: "latestPatch — latest patch of 10.0.3xx band → expects 10.0.302"
+        shell: bash
         run: |
           mkdir -p /tmp/test-latestPatch
-          echo '{"sdk":{"version":"10.0.0","rollForward":"latestPatch"}}' \
+          echo '{"sdk":{"version":"10.0.300","rollForward":"latestPatch"}}' \
             > /tmp/test-latestPatch/global.json
-          echo "global.json content:"
-          cat /tmp/test-latestPatch/global.json
-          echo ""
-          echo "SDK selected:"
-          cd /tmp/test-latestPatch && dotnet --version
-        shell: bash
+          echo "global.json: $(cat /tmp/test-latestPatch/global.json)"
+          echo "SDK selected: $(cd /tmp/test-latestPatch && dotnet --version)"
 
-      - name: "latestMinor — latest minor of major 8"
+      - name: "latestMinor — latest minor of major 8 → expects 8.0.x (highest)"
+        shell: bash
         run: |
           mkdir -p /tmp/test-latestMinor
           echo '{"sdk":{"version":"8.0.0","rollForward":"latestMinor"}}' \
             > /tmp/test-latestMinor/global.json
-          echo "global.json content:"
-          cat /tmp/test-latestMinor/global.json
-          echo ""
-          echo "SDK selected:"
-          cd /tmp/test-latestMinor && dotnet --version
-        shell: bash
+          echo "global.json: $(cat /tmp/test-latestMinor/global.json)"
+          echo "SDK selected: $(cd /tmp/test-latestMinor && dotnet --version)"
 
-      - name: "latestMajor — absolute latest installed SDK"
+      - name: "latestMajor — absolute latest installed SDK → expects 10.0.302"
+        shell: bash
         run: |
           mkdir -p /tmp/test-latestMajor
           echo '{"sdk":{"version":"0.0.0","rollForward":"latestMajor"}}' \
             > /tmp/test-latestMajor/global.json
-          echo "global.json content:"
-          cat /tmp/test-latestMajor/global.json
-          echo ""
-          echo "SDK selected:"
-          cd /tmp/test-latestMajor && dotnet --version
-        shell: bash
+          echo "global.json: $(cat /tmp/test-latestMajor/global.json)"
+          echo "SDK selected: $(cd /tmp/test-latestMajor && dotnet --version)"
 
-      - name: "disable — exact match only (expect failure if not installed)"
+      - name: "disable — exact match only → expects failure (7.0.100 not installed)"
         continue-on-error: true
+        shell: bash
         run: |
           mkdir -p /tmp/test-disable
           echo '{"sdk":{"version":"7.0.100","rollForward":"disable"}}' \
             > /tmp/test-disable/global.json
-          echo "global.json content:"
-          cat /tmp/test-disable/global.json
-          echo ""
+          echo "global.json: $(cat /tmp/test-disable/global.json)"
           echo "SDK selected (will fail — 7.0.100 not installed):"
           cd /tmp/test-disable && dotnet --version
-        shell: bash
