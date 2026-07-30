@@ -21,10 +21,19 @@ jobs:
         with:
           dotnet-version: "9.0.x"
 
+      - name: Report dotnet versions (single-install-windows)
+        shell: pwsh
+        run: |
+          Write-Host "=== dotnet --version ==="
+          dotnet --version
+          Write-Host "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
+
       - name: Verify installed version
         shell: pwsh
         run: |
-          # Use --list-sdks which is unaffected by global.json pinning.
           $sdks = dotnet --list-sdks
           Write-Host "Installed SDKs:"
           $sdks | ForEach-Object { Write-Host "  $_" }
@@ -62,6 +71,16 @@ jobs:
         uses: chiranjib-swain/setup-dotnet@issue_642
         with:
           dotnet-version: "9.0.x"
+
+      - name: Report dotnet versions (multi-install-windows)
+        shell: pwsh
+        run: |
+          Write-Host "=== dotnet --version ==="
+          dotnet --version
+          Write-Host "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
 
       - name: Verify both SDKs are listed
         shell: pwsh
@@ -103,6 +122,15 @@ jobs:
         uses: chiranjib-swain/setup-dotnet@issue_642
         with:
           dotnet-version: "9.0.x"
+
+      - name: Report dotnet versions (multi-install-ubuntu)
+        run: |
+          echo "=== dotnet --version ==="
+          dotnet --version
+          echo "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          echo "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
 
       - name: Verify both SDKs are listed
         run: |
