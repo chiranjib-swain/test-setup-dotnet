@@ -24,21 +24,15 @@ jobs:
       - name: Verify installed version
         shell: pwsh
         run: |
-          # dotnet --version can emit warnings on the same stream; extract the
-          # first line that looks like a semver version number.
-          $raw  = dotnet --version 2>&1
-          Write-Host "Raw output: $raw"
-          $v = ($raw -split "`n" | Where-Object { $_ -match '^\d+\.\d+\.\d+' } | Select-Object -First 1).Trim()
-          Write-Host "Parsed version → $v"
-          if (-not $v) {
-            # Fall back: check dotnet --list-sdks for a 9.x SDK
-            $sdks = dotnet --list-sdks
-            Write-Host "Installed SDKs: $sdks"
-            if (-not ($sdks | Where-Object { $_ -match '^9\.' })) {
-              Write-Error "9.0.x SDK not found in --list-sdks"
-              exit 1
-            }
+          # Use --list-sdks which is unaffected by global.json pinning.
+          $sdks = dotnet --list-sdks
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+          if (-not ($sdks | Where-Object { $_ -match '^9\.' })) {
+            Write-Error "9.0.x SDK not found in --list-sdks"
+            exit 1
           }
+          Write-Host "9.0.x SDK present."
 
       - name: Smoke-test dotnet info
         shell: pwsh
