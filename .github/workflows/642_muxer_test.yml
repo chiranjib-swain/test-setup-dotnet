@@ -1,0 +1,39 @@
+name: "Muxer Test test-issue-642 — skip LTS pre-pass on Windows"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Job 1: Single install — one dotnet-version on windows-latest
+  # Goal : verify the SDK installs and `dotnet --version` resolves
+  #        correctly without the LTS runtime pre-pass on Windows.
+  # ─────────────────────────────────────────────────────────────────
+  single-install-windows:
+    name: "Windows — single install (8.0.x)"
+    runs-on: windows-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (patched — issue_642 branch)
+        uses: chiranjib-swain/setup-dotnet@issue_642
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Verify installed version
+        shell: pwsh
+        run: |
+          # Use --list-sdks which is unaffected by global.json pinning.
+          $sdks = dotnet --list-sdks
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+          if (-not ($sdks | Where-Object { $_ -match '^9\.' })) {
+            Write-Error "8.0.x SDK not found in --list-sdks"
+            exit 1
+          }
+          Write-Host "8.0.x SDK present."
+
+      - name: Smoke-test dotnet info
+        shell: pwsh
+        run: dotnet --info
