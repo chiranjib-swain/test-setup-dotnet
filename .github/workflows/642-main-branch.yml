@@ -1,0 +1,146 @@
+name: "Own Test 642 — skip LTS pre-pass on Windows"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Job 1: Single install — one dotnet-version on windows-latest
+  # Goal : verify the SDK installs and `dotnet --version` resolves
+  #        correctly without the LTS runtime pre-pass on Windows.
+  # ─────────────────────────────────────────────────────────────────
+  single-install-windows:
+    name: "Windows — single install (9.0.x)"
+    runs-on: windows-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (patched — issue_642 branch)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Report dotnet versions (single-install-windows)
+        shell: pwsh
+        run: |
+          Write-Host "=== dotnet --version ==="
+          dotnet --version
+          Write-Host "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
+
+      - name: Verify installed version
+        shell: pwsh
+        run: |
+          $sdks = dotnet --list-sdks
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+          if (-not ($sdks | Where-Object { $_ -match '^9\.' })) {
+            Write-Error "9.0.x SDK not found in --list-sdks"
+            exit 1
+          }
+          Write-Host "9.0.x SDK present."
+
+      - name: Smoke-test dotnet info
+        shell: pwsh
+        run: dotnet --info
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 2: Multiple installs in a single step — matrix of versions
+  #        on windows-latest.
+  # Goal : confirm the muxer installed by SDK A does not break SDK B
+  #        when both are installed sequentially in the same job.
+  # ─────────────────────────────────────────────────────────────────
+  multi-install-windows:
+    name: "Windows — multi-install (8.0.x + 9.0.x)"
+    runs-on: windows-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      # Install first SDK
+      - name: Setup .NET 8.0.x (patched)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # Install second SDK in the same job — the muxer must survive
+      - name: Setup .NET 9.0.x (patched)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Report dotnet versions (multi-install-windows)
+        shell: pwsh
+        run: |
+          Write-Host "=== dotnet --version ==="
+          dotnet --version
+          Write-Host "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
+
+      - name: Verify both SDKs are listed
+        shell: pwsh
+        run: |
+          $sdks = dotnet --list-sdks
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+          $has8 = $sdks | Where-Object { $_ -match '^8\.' }
+          $has9 = $sdks | Where-Object { $_ -match '^9\.' }
+          if (-not $has8) { Write-Error "8.0.x SDK not found!"; exit 1 }
+          if (-not $has9) { Write-Error "9.0.x SDK not found!"; exit 1 }
+          Write-Host "Both SDKs present."
+
+      - name: Verify muxer version resolves to latest installed
+        shell: pwsh
+        run: |
+          $v = dotnet --version
+          Write-Host "Active muxer version → $v"
+          dotnet --info
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 3: Baseline — same tests on ubuntu-latest so we can compare
+  #        output between the patched (Linux keeps the pre-pass) and
+  #        Windows (pre-pass skipped) behaviour.
+  # ─────────────────────────────────────────────────────────────────
+  multi-install-ubuntu:
+    name: "Ubuntu — multi-install baseline (8.0.x + 9.0.x)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8.0.x (patched)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup .NET 9.0.x (patched)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Report dotnet versions (multi-install-ubuntu)
+        run: |
+          echo "=== dotnet --version ==="
+          dotnet --version
+          echo "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          echo "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
+
+      - name: Verify both SDKs are listed
+        run: |
+          echo "Installed SDKs:"
+          dotnet --list-sdks
+          dotnet --list-sdks | grep -q "^8\." || (echo "ERROR: 8.0.x not found" && exit 1)
+          dotnet --list-sdks | grep -q "^9\." || (echo "ERROR: 9.0.x not found" && exit 1)
+          echo "Both SDKs present."
+
+      - name: Verify muxer
+        run: |
+          echo "Active version: $(dotnet --version)"
+          dotnet --info
