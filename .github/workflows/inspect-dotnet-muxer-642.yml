@@ -14,34 +14,36 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== dotnet location ==="
-          $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-          if ($dotnetCmd) {
-            $dotnetCmd | Format-List *
+
+          $dotnetCmd = Get-Command dotnet -ErrorAction Stop
+          $dotnetCmd | Format-List *
+
+          $dotnetExe = $dotnetCmd.Source
+          $dotnetRoot = Split-Path $dotnetExe
+
+          Write-Host ""
+          Write-Host "=== DOTNET_ROOT environment ==="
+          if ($env:DOTNET_ROOT) {
+            Write-Host $env:DOTNET_ROOT
           } else {
-            Write-Warning "dotnet command not found on PATH"
+            Write-Host "(not set)"
           }
 
           Write-Host ""
-          Write-Host "=== DOTNET_ROOT ==="
-          Write-Host $env:DOTNET_ROOT
+          Write-Host "=== Resolved .NET root ==="
+          Write-Host $dotnetRoot
 
           Write-Host ""
           Write-Host "=== dotnet.exe ==="
-          if ($env:DOTNET_ROOT -and (Test-Path "$env:DOTNET_ROOT\dotnet.exe")) {
-            Get-Item "$env:DOTNET_ROOT\dotnet.exe" | Format-List *
-          } elseif ($dotnetCmd -and (Test-Path $dotnetCmd.Source)) {
-            Get-Item $dotnetCmd.Source | Format-List *
-          } else {
-            Write-Warning "No dotnet.exe found via DOTNET_ROOT or PATH"
-          }
+          Get-Item $dotnetExe | Format-List *
+
+          Write-Host ""
+          Write-Host "=== SHA256 ==="
+          Get-FileHash $dotnetExe -Algorithm SHA256
 
           Write-Host ""
           Write-Host "=== host/fxr ==="
-          if ($env:DOTNET_ROOT -and (Test-Path "$env:DOTNET_ROOT\host\fxr")) {
-            Get-ChildItem "$env:DOTNET_ROOT\host\fxr"
-          } else {
-            Write-Warning "host/fxr not found under DOTNET_ROOT"
-          }
+          Get-ChildItem "$dotnetRoot\host\fxr" | Sort-Object Name
 
           Write-Host ""
           Write-Host "=== SDKs ==="
@@ -63,12 +65,22 @@ jobs:
       - name: After setup-dotnet
         shell: pwsh
         run: |
+          $dotnetExe = "$env:DOTNET_ROOT\dotnet.exe"
+
+          Write-Host "=== DOTNET_ROOT ==="
+          Write-Host $env:DOTNET_ROOT
+
+          Write-Host ""
           Write-Host "=== dotnet.exe ==="
-          Get-Item "$env:DOTNET_ROOT\dotnet.exe" | Format-List *
+          Get-Item $dotnetExe | Format-List *
+
+          Write-Host ""
+          Write-Host "=== SHA256 ==="
+          Get-FileHash $dotnetExe -Algorithm SHA256
 
           Write-Host ""
           Write-Host "=== host/fxr ==="
-          Get-ChildItem "$env:DOTNET_ROOT\host\fxr"
+          Get-ChildItem "$env:DOTNET_ROOT\host\fxr" | Sort-Object Name
 
           Write-Host ""
           Write-Host "=== SDKs ==="
