@@ -14,7 +14,12 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== dotnet location ==="
-          Get-Command dotnet | Format-List *
+          $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+          if ($dotnetCmd) {
+            $dotnetCmd | Format-List *
+          } else {
+            Write-Warning "dotnet command not found on PATH"
+          }
 
           Write-Host ""
           Write-Host "=== DOTNET_ROOT ==="
@@ -22,11 +27,21 @@ jobs:
 
           Write-Host ""
           Write-Host "=== dotnet.exe ==="
-          Get-Item "$env:DOTNET_ROOT\dotnet.exe" | Format-List *
+          if ($env:DOTNET_ROOT -and (Test-Path "$env:DOTNET_ROOT\dotnet.exe")) {
+            Get-Item "$env:DOTNET_ROOT\dotnet.exe" | Format-List *
+          } elseif ($dotnetCmd -and (Test-Path $dotnetCmd.Source)) {
+            Get-Item $dotnetCmd.Source | Format-List *
+          } else {
+            Write-Warning "No dotnet.exe found via DOTNET_ROOT or PATH"
+          }
 
           Write-Host ""
           Write-Host "=== host/fxr ==="
-          Get-ChildItem "$env:DOTNET_ROOT\host\fxr"
+          if ($env:DOTNET_ROOT -and (Test-Path "$env:DOTNET_ROOT\host\fxr")) {
+            Get-ChildItem "$env:DOTNET_ROOT\host\fxr"
+          } else {
+            Write-Warning "host/fxr not found under DOTNET_ROOT"
+          }
 
           Write-Host ""
           Write-Host "=== SDKs ==="
