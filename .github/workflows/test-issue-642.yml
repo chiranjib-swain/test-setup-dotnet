@@ -144,3 +144,108 @@ jobs:
         run: |
           echo "Active version: $(dotnet --version)"
           dotnet --info
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 4: hostfxr lifecycle trace — Windows only
+  # Goal : snapshot host\fxr\ BEFORE any install, AFTER Pass 1
+  #        (LTS runtime, same as v4 does), and AFTER Pass 2 (SDK).
+  #        Proves whether Pass 1 adds a new hostfxr.dll version and
+  #        whether dotnet.exe then picks the higher one.
+  # ─────────────────────────────────────────────────────────────────
+  hostfxr-lifecycle-windows:
+    name: "Windows — hostfxr lifecycle trace"
+    runs-on: windows-latest
+    env:
+      DOTNET_ROOT: "C:\\Program Files\\dotnet"
+    steps:
+      - name: "[BEFORE] snapshot host\\fxr\\ from runner image"
+        shell: pwsh
+        run: |
+          $fxrRoot = "C:\Program Files\dotnet\host\fxr"
+          Write-Host "=== host\fxr versions present BEFORE any install ==="
+          if (Test-Path $fxrRoot) {
+            Get-ChildItem $fxrRoot -Directory | ForEach-Object {
+              $dll = Join-Path $_.FullName "hostfxr.dll"
+              $ver = if (Test-Path $dll) { (Get-Item $dll).VersionInfo.FileVersion } else { "dll missing" }
+              Write-Host "  $($_.Name)  →  hostfxr.dll file-version: $ver"
+            }
+          } else {
+            Write-Host "  (host\fxr directory does not exist yet)"
+          }
+          Write-Host ""
+          Write-Host "=== dotnet.exe host binary before any install ==="
+          $muxer = "C:\Program Files\dotnet\dotnet.exe"
+          if (Test-Path $muxer) {
+            $info = Get-Item $muxer
+            Write-Host "  dotnet.exe file-version : $($info.VersionInfo.FileVersion)"
+            Write-Host "  dotnet.exe product-version: $($info.VersionInfo.ProductVersion)"
+            Write-Host "  dotnet.exe last-write    : $($info.LastWriteTimeUtc) UTC"
+          } else {
+            Write-Host "  dotnet.exe does not exist yet"
+          }
+
+      # ── Simulate Pass 1 exactly as actions/setup-dotnet@v4 does it ──
+      - name: "[PASS 1] Install LTS runtime only (mirrors v4 behaviour)"
+        shell: pwsh
+        run: |
+          $script = "$env:GITHUB_ACTION_PATH\..\..\..\chiranjib-swain\setup-dotnet\issue_642\externals\install-dotnet.ps1"
+          # Fall back to downloading if not cached yet
+          if (-not (Test-Path $script)) {
+            $script = Join-Path $env:RUNNER_TEMP "install-dotnet.ps1"
+            Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $script
+          }
+          Write-Host "Running: $script -SkipNonVersionedFiles -Runtime dotnet -Channel LTS"
+          & "C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive `
+            -ExecutionPolicy Unrestricted -Command "& '$script' -SkipNonVersionedFiles -Runtime dotnet -Channel LTS"
+
+      - name: "[AFTER PASS 1] snapshot host\\fxr\\ after LTS runtime install"
+        shell: pwsh
+        run: |
+          $fxrRoot = "C:\Program Files\dotnet\host\fxr"
+          Write-Host "=== host\fxr versions present AFTER Pass 1 (LTS runtime) ==="
+          Get-ChildItem $fxrRoot -Directory | ForEach-Object {
+            $dll = Join-Path $_.FullName "hostfxr.dll"
+            $ver = if (Test-Path $dll) { (Get-Item $dll).VersionInfo.FileVersion } else { "dll missing" }
+            Write-Host "  $($_.Name)  →  hostfxr.dll file-version: $ver"
+          }
+          Write-Host ""
+          Write-Host "=== dotnet.exe after Pass 1 ==="
+          $info = Get-Item "C:\Program Files\dotnet\dotnet.exe"
+          Write-Host "  dotnet.exe file-version : $($info.VersionInfo.FileVersion)"
+          Write-Host "  dotnet.exe last-write   : $($info.LastWriteTimeUtc) UTC"
+          Write-Host ""
+          Write-Host "=== dotnet --info Host section after Pass 1 ==="
+          dotnet --info | Select-String -Pattern "Host:|Version:|Architecture:|Commit:" | Select-Object -First 4
+
+      # ── Pass 2: install user SDK (same as both v4 and our fix) ──
+      - name: "[PASS 2] Install SDK 9.0.x"
+        uses: chiranjib-swain/setup-dotnet@issue_642
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: "[AFTER PASS 2] snapshot host\\fxr\\ after SDK install"
+        shell: pwsh
+        run: |
+          $fxrRoot = "C:\Program Files\dotnet\host\fxr"
+          Write-Host "=== host\fxr versions present AFTER Pass 2 (SDK 9.0.x) ==="
+          Get-ChildItem $fxrRoot -Directory | ForEach-Object {
+            $dll = Join-Path $_.FullName "hostfxr.dll"
+            $ver = if (Test-Path $dll) { (Get-Item $dll).VersionInfo.FileVersion } else { "dll missing" }
+            $writeTime = if (Test-Path $dll) { (Get-Item $dll).LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm:ss") } else { "" }
+            Write-Host "  $($_.Name)  →  hostfxr.dll file-version: $ver  (written: $writeTime UTC)"
+          }
+          Write-Host ""
+          Write-Host "=== dotnet.exe after Pass 2 ==="
+          $info = Get-Item "C:\Program Files\dotnet\dotnet.exe"
+          Write-Host "  dotnet.exe file-version : $($info.VersionInfo.FileVersion)"
+          Write-Host "  dotnet.exe last-write   : $($info.LastWriteTimeUtc) UTC"
+          Write-Host ""
+          Write-Host "=== dotnet --info Host section after Pass 2 ==="
+          dotnet --info | Select-String -Pattern "Host:|Version:|Architecture:|Commit:" | Select-Object -First 4
+          Write-Host ""
+          Write-Host "=== CONCLUSION: which hostfxr.dll does the muxer load? ==="
+          $versions = Get-ChildItem $fxrRoot -Directory | Sort-Object {
+            [version]($_.Name -replace '[^0-9.]','')
+          } -Descending
+          Write-Host "  Highest hostfxr.dll version in host\fxr\: $($versions[0].Name)"
+          Write-Host "  dotnet --version (SDK resolved): $(dotnet --version)"
