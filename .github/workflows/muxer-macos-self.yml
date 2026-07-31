@@ -5,7 +5,7 @@ on:
 
 jobs:
   inspect:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     env:
       DOTNET_MULTILEVEL_LOOKUP: 0
