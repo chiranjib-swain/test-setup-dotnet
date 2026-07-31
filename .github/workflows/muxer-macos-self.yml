@@ -1,0 +1,178 @@
+name: Inspect .NET Muxer Across Multiple Installs (macOS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initial State
+        shell: bash
+        run: |
+          inspect_dotnet() {
+            echo
+            echo "=========================================="
+            echo "$1"
+            echo "=========================================="
+
+            DOTNET_EXE=$(command -v dotnet)
+            DOTNET_ROOT=$(dirname "$DOTNET_EXE")
+
+            echo
+            echo "DOTNET_ROOT=${DOTNET_ROOT}"
+
+            echo
+            echo "=== dotnet executable ==="
+            ls -lh "$DOTNET_EXE"
+
+            echo
+            echo "=== SHA256 ==="
+            shasum -a 256 "$DOTNET_EXE"
+
+            echo
+            echo "=== File Version ==="
+            "$DOTNET_EXE" --version
+
+            echo
+            echo "=== host/fxr ==="
+            ls -1 "$DOTNET_ROOT/host/fxr"
+
+            for dir in "$DOTNET_ROOT"/host/fxr/*; do
+              [ -d "$dir" ] || continue
+              echo
+              echo "hostfxr version: $(basename "$dir")"
+              ls -lh "$dir"
+            done
+
+            echo
+            echo "=== SDKs ==="
+            dotnet --list-sdks
+
+            echo
+            echo "=== Runtimes ==="
+            dotnet --list-runtimes
+
+            echo
+            echo "=== dotnet --info ==="
+            dotnet --info
+          }
+
+          inspect_dotnet "Initial Machine State"
+
+      - name: Install SDK 10.0.100
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.100
+
+      - name: Inspect after SDK 10.0.100
+        shell: bash
+        run: |
+          inspect_dotnet() {
+            echo
+            echo "=========================================="
+            echo "$1"
+            echo "=========================================="
+
+            DOTNET_EXE="$DOTNET_ROOT/dotnet"
+
+            echo
+            echo "DOTNET_ROOT=${DOTNET_ROOT}"
+
+            echo
+            echo "=== dotnet executable ==="
+            ls -lh "$DOTNET_EXE"
+
+            echo
+            echo "=== SHA256 ==="
+            shasum -a 256 "$DOTNET_EXE"
+
+            echo
+            echo "=== File Version ==="
+            "$DOTNET_EXE" --version
+
+            echo
+            echo "=== host/fxr ==="
+            ls -1 "$DOTNET_ROOT/host/fxr"
+
+            for dir in "$DOTNET_ROOT"/host/fxr/*; do
+              [ -d "$dir" ] || continue
+              echo
+              echo "hostfxr version: $(basename "$dir")"
+              ls -lh "$dir"
+            done
+
+            echo
+            echo "=== SDKs ==="
+            dotnet --list-sdks
+
+            echo
+            echo "=== Runtimes ==="
+            dotnet --list-runtimes
+
+            echo
+            echo "=== dotnet --info ==="
+            dotnet --info
+          }
+
+          inspect_dotnet "After SDK 10.0.100"
+
+      - name: Install SDK 10.0.200
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.200
+
+      - name: Inspect after SDK 10.0.200
+        shell: bash
+        run: |
+          inspect_dotnet() {
+            echo
+            echo "=========================================="
+            echo "$1"
+            echo "=========================================="
+
+            DOTNET_EXE="$DOTNET_ROOT/dotnet"
+
+            echo
+            echo "DOTNET_ROOT=${DOTNET_ROOT}"
+
+            echo
+            echo "=== dotnet executable ==="
+            ls -lh "$DOTNET_EXE"
+
+            echo
+            echo "=== SHA256 ==="
+            shasum -a 256 "$DOTNET_EXE"
+
+            echo
+            echo "=== File Version ==="
+            "$DOTNET_EXE" --version
+
+            echo
+            echo "=== host/fxr ==="
+            ls -1 "$DOTNET_ROOT/host/fxr"
+
+            for dir in "$DOTNET_ROOT"/host/fxr/*; do
+              [ -d "$dir" ] || continue
+              echo
+              echo "hostfxr version: $(basename "$dir")"
+              ls -lh "$dir"
+            done
+
+            echo
+            echo "=== SDKs ==="
+            dotnet --list-sdks
+
+            echo
+            echo "=== Runtimes ==="
+            dotnet --list-runtimes
+
+            echo
+            echo "=== dotnet --info ==="
+            dotnet --info
+          }
+
+          inspect_dotnet "After SDK 10.0.200"
