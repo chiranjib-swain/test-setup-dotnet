@@ -6,6 +6,8 @@ on:
 jobs:
   inspect:
     runs-on: self-hosted
+    env:
+      DOTNET_MULTILEVEL_LOOKUP: 0
 
     steps:
       - uses: actions/checkout@v4
@@ -19,48 +21,62 @@ jobs:
             echo "$1"
             echo "=========================================="
 
-            DOTNET_EXE=$(command -v dotnet)
-            # Follow symlinks to get the real binary, then derive the true install root
-            DOTNET_EXE_REAL=$(readlink -f "$DOTNET_EXE" 2>/dev/null || realpath "$DOTNET_EXE" 2>/dev/null || echo "$DOTNET_EXE")
-            DOTNET_ROOT=$(dirname "$DOTNET_EXE_REAL")
+            DOTNET_EXE=$(command -v dotnet || true)
+            if [ -n "$DOTNET_EXE" ]; then
+              DOTNET_EXE_REAL=$(readlink -f "$DOTNET_EXE" 2>/dev/null || realpath "$DOTNET_EXE" 2>/dev/null || echo "$DOTNET_EXE")
+              DOTNET_ROOT_ACTUAL=$(dirname "$DOTNET_EXE_REAL")
+            else
+              DOTNET_EXE_REAL=""
+              DOTNET_ROOT_ACTUAL=""
+            fi
 
             echo
-            echo "DOTNET_ROOT=${DOTNET_ROOT}"
+            echo "DOTNET_ROOT(from setup-dotnet)=${DOTNET_ROOT:-<unset>}"
+            echo "DOTNET_ROOT(actual from PATH)=${DOTNET_ROOT_ACTUAL:-<not found>}"
 
-            echo
-            echo "=== dotnet executable ==="
-            ls -lh "$DOTNET_EXE_REAL"
-
-            echo
-            echo "=== SHA256 ==="
-            shasum -a 256 "$DOTNET_EXE_REAL"
-
-            echo
-            echo "=== File Version ==="
-            "$DOTNET_EXE_REAL" --version
-
-            echo
-            echo "=== host/fxr ==="
-            ls -1 "$DOTNET_ROOT/host/fxr"
-
-            for dir in "$DOTNET_ROOT"/host/fxr/*; do
-              [ -d "$dir" ] || continue
+            if [ -n "$DOTNET_EXE_REAL" ]; then
               echo
-              echo "hostfxr version: $(basename "$dir")"
-              ls -lh "$dir"
-            done
+              echo "=== dotnet executable ==="
+              ls -lh "$DOTNET_EXE_REAL"
 
-            echo
-            echo "=== SDKs ==="
-            dotnet --list-sdks
+              echo
+              echo "=== SHA256 ==="
+              shasum -a 256 "$DOTNET_EXE_REAL"
 
-            echo
-            echo "=== Runtimes ==="
-            dotnet --list-runtimes
+              echo
+              echo "=== File Version ==="
+              "$DOTNET_EXE_REAL" --version
+            else
+              echo
+              echo "dotnet not found on PATH"
+            fi
 
-            echo
-            echo "=== dotnet --info ==="
-            dotnet --info
+            if [ -n "$DOTNET_ROOT_ACTUAL" ] && [ -d "$DOTNET_ROOT_ACTUAL/host/fxr" ]; then
+              echo
+              echo "=== host/fxr ==="
+              ls -1 "$DOTNET_ROOT_ACTUAL/host/fxr"
+
+              for dir in "$DOTNET_ROOT_ACTUAL"/host/fxr/*; do
+                [ -d "$dir" ] || continue
+                echo
+                echo "hostfxr version: $(basename "$dir")"
+                ls -lh "$dir"
+              done
+            fi
+
+            if [ -n "$DOTNET_EXE_REAL" ]; then
+              echo
+              echo "=== SDKs ==="
+              "$DOTNET_EXE_REAL" --list-sdks
+
+              echo
+              echo "=== Runtimes ==="
+              "$DOTNET_EXE_REAL" --list-runtimes
+
+              echo
+              echo "=== dotnet --info ==="
+              "$DOTNET_EXE_REAL" --info
+            fi
           }
 
           inspect_dotnet "Initial Machine State"
@@ -69,6 +85,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.100
+          global-json-file: ''
 
       - name: Inspect after SDK 10.0.100
         shell: bash
@@ -109,15 +126,15 @@ jobs:
 
             echo
             echo "=== SDKs ==="
-            dotnet --list-sdks
+            "$DOTNET_EXE" --list-sdks
 
             echo
             echo "=== Runtimes ==="
-            dotnet --list-runtimes
+            "$DOTNET_EXE" --list-runtimes
 
             echo
             echo "=== dotnet --info ==="
-            dotnet --info
+            "$DOTNET_EXE" --info
           }
 
           inspect_dotnet "After SDK 10.0.100"
@@ -126,6 +143,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.200
+          global-json-file: ''
 
       - name: Inspect after SDK 10.0.200
         shell: bash
@@ -166,15 +184,15 @@ jobs:
 
             echo
             echo "=== SDKs ==="
-            dotnet --list-sdks
+            "$DOTNET_EXE" --list-sdks
 
             echo
             echo "=== Runtimes ==="
-            dotnet --list-runtimes
+            "$DOTNET_EXE" --list-runtimes
 
             echo
             echo "=== dotnet --info ==="
-            dotnet --info
+            "$DOTNET_EXE" --info
           }
 
           inspect_dotnet "After SDK 10.0.200"
