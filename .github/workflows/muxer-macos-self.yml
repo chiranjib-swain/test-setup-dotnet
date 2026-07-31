@@ -20,22 +20,24 @@ jobs:
             echo "=========================================="
 
             DOTNET_EXE=$(command -v dotnet)
-            DOTNET_ROOT=$(dirname "$DOTNET_EXE")
+            # Follow symlinks to get the real binary, then derive the true install root
+            DOTNET_EXE_REAL=$(readlink -f "$DOTNET_EXE" 2>/dev/null || realpath "$DOTNET_EXE" 2>/dev/null || echo "$DOTNET_EXE")
+            DOTNET_ROOT=$(dirname "$DOTNET_EXE_REAL")
 
             echo
             echo "DOTNET_ROOT=${DOTNET_ROOT}"
 
             echo
             echo "=== dotnet executable ==="
-            ls -lh "$DOTNET_EXE"
+            ls -lh "$DOTNET_EXE_REAL"
 
             echo
             echo "=== SHA256 ==="
-            shasum -a 256 "$DOTNET_EXE"
+            shasum -a 256 "$DOTNET_EXE_REAL"
 
             echo
             echo "=== File Version ==="
-            "$DOTNET_EXE" --version
+            "$DOTNET_EXE_REAL" --version
 
             echo
             echo "=== host/fxr ==="
