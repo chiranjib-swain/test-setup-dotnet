@@ -5,7 +5,7 @@ on:
 
 jobs:
   inspect:
-    runs-on: self-hosted
+    runs-on: macos-latest
 
     env:
       DOTNET_MULTILEVEL_LOOKUP: 0
@@ -13,11 +13,10 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
     steps:
-      - name: Initial Machine State
+      - name: Define inspection function
         shell: bash
         run: |
-          set -euo pipefail
-
+          cat > inspect.sh <<'EOF'
           inspect_dotnet() {
             local TITLE="$1"
 
@@ -68,10 +67,14 @@ jobs:
             echo "=== dotnet --info ==="
             dotnet --info || true
           }
+          EOF
 
+      - name: Initial Machine State
+        shell: bash
+        run: |
+          source inspect.sh
           inspect_dotnet "Initial Machine State"
 
-      # ── Install 1: specific older SDK ────────────────────────────────────
       - name: Install SDK 8.0.423
         uses: chiranjib-swain/setup-dotnet@issue_642
         with:
@@ -80,37 +83,9 @@ jobs:
       - name: Inspect after SDK 8.0.423
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$(mktemp -d)"
+          source inspect.sh
+          inspect_dotnet "After SDK 8.0.423"
 
-          echo "DOTNET_ROOT=$DOTNET_ROOT"
-          DOTNET_EXE="$DOTNET_ROOT/dotnet"
-
-          echo
-          echo "=== dotnet executable ==="
-          ls -lh "$DOTNET_EXE"
-
-          echo
-          echo "=== SHA256 ==="
-          shasum -a 256 "$DOTNET_EXE"
-
-          echo
-          echo "=== host/fxr ==="
-          ls -la "$DOTNET_ROOT/host/fxr"
-
-          echo
-          echo "=== SDKs ==="
-          dotnet --list-sdks
-
-          echo
-          echo "=== Runtimes ==="
-          dotnet --list-runtimes
-
-          echo
-          echo "=== dotnet --info ==="
-          dotnet --info
-
-      # ── Install 2: latest 9.0.x patch ────────────────────────────────────
       - name: Install SDK 9.0.x
         uses: chiranjib-swain/setup-dotnet@issue_642
         with:
@@ -119,38 +94,5 @@ jobs:
       - name: Inspect after SDK 9.0.x
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$(mktemp -d)"
-
-          echo "DOTNET_ROOT=$DOTNET_ROOT"
-          DOTNET_EXE="$DOTNET_ROOT/dotnet"
-
-          echo
-          echo "=== dotnet executable ==="
-          ls -lh "$DOTNET_EXE"
-
-          echo
-          echo "=== SHA256 ==="
-          shasum -a 256 "$DOTNET_EXE"
-
-          echo
-          echo "=== host/fxr ==="
-          ls -la "$DOTNET_ROOT/host/fxr"
-
-          echo
-          echo "=== SDKs ==="
-          dotnet --list-sdks
-
-          echo
-          echo "=== Runtimes ==="
-          dotnet --list-runtimes
-
-          echo
-          echo "=== dotnet --info ==="
-          dotnet --info
-
-
-
-          echo
-          echo "=== dotnet --info ==="
-          dotnet --info
+          source inspect.sh
+          inspect_dotnet "After SDK 9.0.x"
