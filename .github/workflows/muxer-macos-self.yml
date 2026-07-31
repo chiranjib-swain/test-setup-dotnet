@@ -1,4 +1,4 @@
-name: Inspect .NET Muxer Across Multiple Installs (macOS)
+name: Inspect .NET Muxer Across Multiple Installs (Windows)
 
 on:
   workflow_dispatch:
@@ -14,66 +14,69 @@ jobs:
 
     steps:
       - name: Define inspection function
-        shell: bash
+        shell: pwsh
         run: |
-          cat > inspect.sh <<'EOF'
-          inspect_dotnet() {
-            local TITLE="$1"
+          @'
+          function Inspect-Dotnet {
+              param([string]$Title)
 
-            echo
-            echo "=================================================="
-            echo "$TITLE"
-            echo "=================================================="
+              Write-Host ""
+              Write-Host "=================================================="
+              Write-Host $Title
+              Write-Host "=================================================="
 
-            cd "$(mktemp -d)"
+              Set-Location $env:RUNNER_TEMP
 
-            DOTNET_EXE=$(command -v dotnet || true)
+              $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 
-            if [ -z "$DOTNET_EXE" ]; then
-              echo "dotnet not found on PATH"
-              return
-            fi
+              if (-not $dotnet) {
+                  Write-Host "dotnet not found on PATH"
+                  return
+              }
 
-            DOTNET_EXE_REAL=$(realpath "$DOTNET_EXE" 2>/dev/null || echo "$DOTNET_EXE")
-            DOTNET_ROOT_ACTUAL=$(dirname "$DOTNET_EXE_REAL")
+              $dotnetExe = $dotnet.Source
+              $dotnetRoot = Split-Path $dotnetExe
 
-            echo
-            echo "DOTNET_EXE=$DOTNET_EXE"
-            echo "DOTNET_EXE_REAL=$DOTNET_EXE_REAL"
-            echo "DOTNET_ROOT_ACTUAL=$DOTNET_ROOT_ACTUAL"
-            echo "DOTNET_ROOT(env)=${DOTNET_ROOT:-<unset>}"
+              Write-Host ""
+              Write-Host "DOTNET_EXE=$dotnetExe"
+              Write-Host "DOTNET_ROOT_ACTUAL=$dotnetRoot"
+              Write-Host "DOTNET_ROOT(env)=$env:DOTNET_ROOT"
 
-            echo
-            echo "=== dotnet executable ==="
-            ls -lh "$DOTNET_EXE_REAL"
+              Write-Host ""
+              Write-Host "=== dotnet executable ==="
+              Get-Item $dotnetExe | Format-List *
 
-            echo
-            echo "=== SHA256 ==="
-            shasum -a 256 "$DOTNET_EXE_REAL"
+              Write-Host ""
+              Write-Host "=== FileVersionInfo ==="
+              (Get-Item $dotnetExe).VersionInfo | Format-List *
 
-            echo
-            echo "=== host/fxr ==="
-            ls -la "$DOTNET_ROOT_ACTUAL/host/fxr" || true
+              Write-Host ""
+              Write-Host "=== SHA256 ==="
+              Get-FileHash $dotnetExe -Algorithm SHA256
 
-            echo
-            echo "=== SDKs ==="
-            dotnet --list-sdks || true
+              Write-Host ""
+              Write-Host "=== host/fxr ==="
+              Get-ChildItem "$dotnetRoot\host\fxr" -Force -ErrorAction SilentlyContinue
 
-            echo
-            echo "=== Runtimes ==="
-            dotnet --list-runtimes || true
+              Write-Host ""
+              Write-Host "=== SDKs ==="
+              dotnet --list-sdks
 
-            echo
-            echo "=== dotnet --info ==="
-            dotnet --info || true
+              Write-Host ""
+              Write-Host "=== Runtimes ==="
+              dotnet --list-runtimes
+
+              Write-Host ""
+              Write-Host "=== dotnet --info ==="
+              dotnet --info
           }
-          EOF
+          '@ | Set-Content inspect.ps1
 
       - name: Initial Machine State
-        shell: bash
+        shell: pwsh
         run: |
-          source inspect.sh
-          inspect_dotnet "Initial Machine State"
+          . .\inspect.ps1
+          Inspect-Dotnet "Initial Machine State"
 
       - name: Install SDK 8.0.423
         uses: chiranjib-swain/setup-dotnet@issue_642
@@ -81,10 +84,10 @@ jobs:
           dotnet-version: 8.0.423
 
       - name: Inspect after SDK 8.0.423
-        shell: bash
+        shell: pwsh
         run: |
-          source inspect.sh
-          inspect_dotnet "After SDK 8.0.423"
+          . .\inspect.ps1
+          Inspect-Dotnet "After SDK 8.0.423"
 
       - name: Install SDK 9.0.x
         uses: chiranjib-swain/setup-dotnet@issue_642
@@ -92,7 +95,7 @@ jobs:
           dotnet-version: 9.0.x
 
       - name: Inspect after SDK 9.0.x
-        shell: bash
+        shell: pwsh
         run: |
-          source inspect.sh
-          inspect_dotnet "After SDK 9.0.x"
+          . .\inspect.ps1
+          Inspect-Dotnet "After SDK 9.0.x"
