@@ -71,20 +71,19 @@ jobs:
 
           inspect_dotnet "Initial Machine State"
 
-      - name: Install SDK 9.0.x
-        uses: actions/setup-dotnet@v4
+      # ── Install 1: specific older SDK ────────────────────────────────────
+      - name: Install SDK 8.0.423
+        uses: chiranjib-swain/setup-dotnet@issue_642
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 8.0.423
 
-      - name: Inspect after SDK 9.0.x
+      - name: Inspect after SDK 8.0.423
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$(mktemp -d)"
 
           echo "DOTNET_ROOT=$DOTNET_ROOT"
-
           DOTNET_EXE="$DOTNET_ROOT/dotnet"
 
           echo
@@ -111,20 +110,19 @@ jobs:
           echo "=== dotnet --info ==="
           dotnet --info
 
-      - name: Install SDK 10.0.x
-        uses: actions/setup-dotnet@v4
+      # ── Install 2: latest 9.0.x patch ────────────────────────────────────
+      - name: Install SDK 9.0.x
+        uses: chiranjib-swain/setup-dotnet@issue_642
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 9.0.x
 
-      - name: Inspect after SDK 10.0.x
+      - name: Inspect after SDK 9.0.x
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$(mktemp -d)"
 
           echo "DOTNET_ROOT=$DOTNET_ROOT"
-
           DOTNET_EXE="$DOTNET_ROOT/dotnet"
 
           echo
@@ -146,6 +144,12 @@ jobs:
           echo
           echo "=== Runtimes ==="
           dotnet --list-runtimes
+
+          echo
+          echo "=== dotnet --info ==="
+          dotnet --info
+
+
 
           echo
           echo "=== dotnet --info ==="
