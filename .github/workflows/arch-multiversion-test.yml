@@ -1,0 +1,250 @@
+name: Multi-Version + Architecture Install Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Matrix overview
+#
+# Job                    | OS             | Arch  | Install dir
+# ───────────────────────┼────────────────┼───────┼──────────────────────────
+# install-x64            | ubuntu-latest  | x64   | /usr/share/dotnet/        (same arch → root)
+#                        | windows-latest | x64   | C:\Program Files\dotnet\  (same arch → root)
+#                        | macos-latest   | x64   | ~/.dotnet/x64/            (arm64 runner → subdir)
+# install-x86-windows    | windows-latest | x86   | C:\Program Files\dotnet\x86\ (cross-arch → subdir)
+# install-arm64-macos    | macos-latest   | arm64 | ~/.dotnet/                (same arch → root)
+#
+# When normalizeArch(requested) != normalizeArch(os.arch()):
+#   installer.ts appends the architecture name to the default install dir.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ───────────────────────────────────────────────────────────────
+  # x64 — all three platforms
+  # ubuntu: same arch (x64→x64) → installs to /usr/share/dotnet/
+  # windows: same arch (x64→x64) → installs to C:\Program Files\dotnet\
+  # macos: CROSS arch (x64 on arm64 runner) → installs to ~/.dotnet/x64/
+  # ───────────────────────────────────────────────────────────────
+  install-x64:
+    name: "${{ matrix.os }} | x64 | 8.0.x + 9.0.x"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: "BEFORE — preinstalled muxer and host/fxr"
+        shell: bash
+        run: |
+          echo "============================================================"
+          echo " Runner arch: $(uname -m 2>/dev/null || echo 'windows')"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer version ---"
+          dotnet --version || echo "(none)"
+          echo ""
+          echo "--- installed SDKs ---"
+          dotnet --list-sdks || echo "(none)"
+          echo ""
+          echo "--- installed runtimes ---"
+          dotnet --list-runtimes || echo "(none)"
+          echo ""
+          echo "--- host/fxr directories ---"
+          for p in \
+            "$HOME/.dotnet/host/fxr" \
+            "/usr/share/dotnet/host/fxr" \
+            "$PROGRAMFILES/dotnet/host/fxr" \
+            "$PROGRAMFILES/dotnet/x64/host/fxr"
+          do
+            if [ -d "$p" ]; then echo "  $p:"; ls "$p"; fi
+          done
+
+      - name: "setup-dotnet — 8.0.x + 9.0.x (x64)"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+          architecture: x64
+
+      - name: "AFTER — muxer and host/fxr post-install"
+        shell: bash
+        run: |
+          echo "============================================================"
+          echo " DOTNET_ROOT = $DOTNET_ROOT"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer version (should be latest LTS from Pass 1) ---"
+          dotnet --version
+          echo ""
+          echo "--- installed SDKs ---"
+          dotnet --list-sdks
+          echo ""
+          echo "--- installed runtimes ---"
+          dotnet --list-runtimes
+          echo ""
+          echo "--- host/fxr directories (shows LTS + 8.0.x + 9.0.x entries) ---"
+          for p in \
+            "$HOME/.dotnet/host/fxr" \
+            "$HOME/.dotnet/x64/host/fxr" \
+            "/usr/share/dotnet/host/fxr" \
+            "$PROGRAMFILES/dotnet/host/fxr"
+          do
+            if [ -d "$p" ]; then echo "  $p:"; ls "$p"; fi
+          done
+          echo ""
+          echo "--- muxer binary details ---"
+          MUXER=$(command -v dotnet 2>/dev/null)
+          if [ -n "$MUXER" ]; then
+            ls -la "$MUXER"
+          fi
+
+  # ───────────────────────────────────────────────────────────────
+  # x86 — Windows only
+  # Cross-arch install (x86 on x64 runner).
+  # installer.ts appends 'x86' to the install dir:
+  #   C:\Program Files\dotnet\x86\
+  # The default x64 muxer at C:\Program Files\dotnet\dotnet.exe
+  # remains unchanged.
+  # ───────────────────────────────────────────────────────────────
+  install-x86-windows:
+    name: "windows-latest | x86 | 8.0.x + 9.0.x"
+    runs-on: windows-latest
+    steps:
+      - name: "BEFORE — preinstalled muxer (x64) and host/fxr"
+        shell: pwsh
+        run: |
+          Write-Host "============================================================"
+          Write-Host " Runner arch: $([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)"
+          Write-Host "============================================================"
+          Write-Host ""
+          Write-Host "--- default muxer (x64) ---"
+          dotnet --version
+          Write-Host ""
+          Write-Host "--- installed SDKs ---"
+          dotnet --list-sdks
+          Write-Host ""
+          Write-Host "--- host/fxr (x64) ---"
+          $fxrPath = "$env:ProgramFiles\dotnet\host\fxr"
+          if (Test-Path $fxrPath) {
+            Get-ChildItem $fxrPath | Select-Object -ExpandProperty Name
+          } else {
+            Write-Host "(not found at $fxrPath)"
+          }
+          Write-Host ""
+          Write-Host "--- x86 install dir (should not exist yet) ---"
+          $x86Path = "$env:ProgramFiles\dotnet\x86"
+          if (Test-Path $x86Path) { Get-ChildItem $x86Path | Select-Object Name }
+          else { Write-Host "(not present)" }
+
+      - name: "setup-dotnet — 8.0.x + 9.0.x (x86)"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+          architecture: x86
+
+      - name: "AFTER — x86 install dir, muxer, host/fxr"
+        shell: pwsh
+        run: |
+          Write-Host "============================================================"
+          Write-Host " DOTNET_ROOT     = $env:DOTNET_ROOT"
+          Write-Host " DOTNET_ROOT_X86 = $env:DOTNET_ROOT_X86"
+          Write-Host "============================================================"
+          Write-Host ""
+          Write-Host "--- x64 muxer (unchanged) ---"
+          dotnet --version
+          Write-Host ""
+          Write-Host "--- x86 install dir ---"
+          # setup-dotnet installs cross-arch to: <default_dir>\<arch>\
+          $x86Base = "$env:ProgramFiles\dotnet\x86"
+          $altBase  = "$env:DOTNET_ROOT_X86"
+          $x86Dir   = if ($altBase) { $altBase } elseif (Test-Path $x86Base) { $x86Base } else { $null }
+          if ($x86Dir) {
+            Write-Host "  Path: $x86Dir"
+            Write-Host ""
+            Write-Host "--- x86 muxer ---"
+            & "$x86Dir\dotnet.exe" --version
+            Write-Host ""
+            Write-Host "--- x86 SDKs ---"
+            Get-ChildItem "$x86Dir\sdk" | Select-Object -ExpandProperty Name
+            Write-Host ""
+            Write-Host "--- x86 runtimes ---"
+            Get-ChildItem "$x86Dir\shared\Microsoft.NETCore.App" | Select-Object -ExpandProperty Name
+            Write-Host ""
+            Write-Host "--- x86 host/fxr ---"
+            Get-ChildItem "$x86Dir\host\fxr" | Select-Object -ExpandProperty Name
+          } else {
+            Write-Host "(x86 install directory not found)"
+            Write-Host "Searching under $env:ProgramFiles\dotnet\..."
+            Get-ChildItem "$env:ProgramFiles\dotnet" -Depth 0 | Select-Object Name
+          }
+
+  # ───────────────────────────────────────────────────────────────
+  # arm64 — macOS Apple Silicon (native arm64 runner)
+  # Same arch (arm64→arm64) → installs to ~/.dotnet/ (root, no subdir)
+  # Compare with x64 job on macos-latest which goes to ~/.dotnet/x64/
+  # ───────────────────────────────────────────────────────────────
+  install-arm64-macos:
+    name: "macos-latest (arm64 runner) | arm64 | 8.0.x + 9.0.x"
+    runs-on: macos-latest
+    steps:
+      - name: "BEFORE — preinstalled muxer (arm64) and host/fxr"
+        run: |
+          echo "============================================================"
+          echo " Runner arch: $(uname -m)"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer ---"
+          dotnet --version || echo "(none)"
+          echo ""
+          echo "--- installed SDKs ---"
+          dotnet --list-sdks || echo "(none)"
+          echo ""
+          echo "--- DOTNET_ROOT ---"
+          echo "$DOTNET_ROOT"
+          echo ""
+          echo "--- host/fxr ---"
+          for p in "$HOME/.dotnet/host/fxr" "/usr/local/share/dotnet/host/fxr"
+          do
+            if [ -d "$p" ]; then echo "  $p:"; ls "$p"; fi
+          done || echo "(not found)"
+
+      - name: "setup-dotnet — 8.0.x + 9.0.x (arm64)"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+          architecture: arm64
+
+      - name: "AFTER — arm64 muxer and host/fxr post-install"
+        run: |
+          echo "============================================================"
+          echo " DOTNET_ROOT = $DOTNET_ROOT"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer version ---"
+          dotnet --version
+          echo ""
+          echo "--- installed SDKs ---"
+          dotnet --list-sdks
+          echo ""
+          echo "--- installed runtimes ---"
+          dotnet --list-runtimes
+          echo ""
+          echo "--- host/fxr (all versions installed by setup-dotnet) ---"
+          for p in \
+            "$HOME/.dotnet/host/fxr" \
+            "/usr/local/share/dotnet/host/fxr" \
+            "$DOTNET_ROOT/host/fxr"
+          do
+            if [ -d "$p" ]; then echo "  $p:"; ls "$p"; fi
+          done
+          echo ""
+          echo "--- muxer binary ---"
+          ls -la "$(command -v dotnet)"
