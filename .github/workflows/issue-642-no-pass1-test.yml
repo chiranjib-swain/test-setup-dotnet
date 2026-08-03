@@ -1,0 +1,94 @@
+name: Issue 642 - No LTS Pre-pass Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Tests chiranjib-swain/setup-dotnet@issue_642 which removes Pass 1
+# (the LTS runtime pre-install). Without Pass 1:
+#   - Only the user-requested SDKs are installed
+#   - No extra LTS runtime entry in host/fxr
+#   - Muxer version comes from the SDK installer itself, not a separate LTS pass
+#
+# Compared to actions/setup-dotnet@v4 (two-pass), AFTER should show:
+#   v4     : LTS runtime + 8.0.x + 9.0.x in host/fxr
+#   issue_642: only 8.0.x + 9.0.x in host/fxr
+
+jobs:
+  no-pass1:
+    name: "${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - windows-latest
+          - windows-11-arm
+          - macos-15-intel
+          - macos-latest
+
+    steps:
+      - name: "BEFORE - runner arch, preinstalled muxer and host/fxr"
+        shell: bash
+        run: |
+          echo "============================================================"
+          echo " Runner OS  : $RUNNER_OS"
+          echo " Runner arch: $(uname -m)"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer version (preinstalled) ---"
+          dotnet --version 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- installed SDKs ---"
+          dotnet --list-sdks 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- installed runtimes ---"
+          dotnet --list-runtimes 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- host/fxr directories ---"
+          for p in \
+            "$HOME/.dotnet/host/fxr" \
+            "/usr/share/dotnet/host/fxr" \
+            "${PROGRAMFILES}/dotnet/host/fxr"
+          do
+            [ -d "$p" ] && echo "  $p:" && ls "$p" || true
+          done
+
+      - name: "setup-dotnet (issue_642 branch - no LTS pre-pass) - 8.0.x + 9.0.x"
+        uses: chiranjib-swain/setup-dotnet@issue_642
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: "AFTER - DOTNET_ROOT, muxer, SDKs, runtimes, host/fxr"
+        shell: bash
+        run: |
+          echo "============================================================"
+          echo " DOTNET_ROOT = $DOTNET_ROOT"
+          echo "============================================================"
+          echo ""
+          echo "--- muxer version ---"
+          dotnet --version
+          echo ""
+          echo "--- installed SDKs (should show only 8.0.x + 9.0.x) ---"
+          dotnet --list-sdks
+          echo ""
+          echo "--- installed runtimes (no extra LTS runtime expected) ---"
+          dotnet --list-runtimes
+          echo ""
+          echo "--- host/fxr directories ---"
+          for p in \
+            "$HOME/.dotnet/host/fxr" \
+            "/usr/share/dotnet/host/fxr" \
+            "${PROGRAMFILES}/dotnet/host/fxr"
+          do
+            [ -d "$p" ] && echo "  $p:" && ls "$p" || true
+          done
+          echo ""
+          echo "--- muxer binary location ---"
+          command -v dotnet && ls -la "$(command -v dotnet)" || true
