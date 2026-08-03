@@ -10,13 +10,14 @@ permissions:
 # Architecture is determined by the runner itself — no 'architecture' input
 # (that input is not present in the published actions/setup-dotnet@v4).
 #
-# Runner          | OS      | Arch   | Default install dir
-# ────────────────┼─────────┼────────┼────────────────────────────────────────
-# ubuntu-latest   | Linux   | x64    | /usr/share/dotnet/
-# ubuntu-24.04-arm| Linux   | arm64  | /usr/share/dotnet/
-# windows-latest  | Windows | x64    | C:\Program Files\dotnet\
-# macos-13        | macOS   | x64    | ~/.dotnet/
-# macos-latest    | macOS   | arm64  | ~/.dotnet/
+# Runner            | OS      | Arch   | Default install dir
+# ──────────────────┼─────────┼────────┼────────────────────────────────────
+# ubuntu-latest     | Linux   | x64    | /usr/share/dotnet/
+# ubuntu-24.04-arm  | Linux   | arm64  | /usr/share/dotnet/
+# windows-latest    | Windows | x64    | C:\Program Files\dotnet\
+# windows-11-arm    | Windows | arm64  | C:\Program Files\dotnet\
+# macos-15-intel    | macOS   | x64    | ~/.dotnet/
+# macos-latest      | macOS   | arm64  | ~/.dotnet/
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -27,11 +28,12 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest        # x64 Linux
-          - ubuntu-24.04-arm     # arm64 Linux
-          - windows-latest       # x64 Windows
-          - macos-13             # x64 macOS (Intel)
-          - macos-latest         # arm64 macOS (Apple Silicon)
+          - ubuntu-latest       # x64  Linux
+          - ubuntu-24.04-arm    # arm64 Linux
+          - windows-latest      # x64  Windows
+          - windows-11-arm      # arm64 Windows
+          - macos-15-intel      # x64  macOS (Intel)
+          - macos-latest        # arm64 macOS (Apple Silicon)
 
     steps:
       # ── BEFORE ────────────────────────────────────────────────────────────
