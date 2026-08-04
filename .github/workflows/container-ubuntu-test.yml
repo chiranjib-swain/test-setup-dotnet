@@ -1,0 +1,65 @@
+name: Container Ubuntu Clean-Slate Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v4-in-container:
+    name: "v4 | ubuntu:24.04 container | 9.0.x"
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install prerequisites
+        run: apt-get update -qq && apt-get install -y -qq curl tar ca-certificates
+
+      - name: "BEFORE - confirm zero .NET in fresh container"
+        run: |
+          dotnet --version 2>/dev/null || echo "(no dotnet — clean slate confirmed)"
+          ls /root/.dotnet 2>/dev/null || echo "/root/.dotnet not present"
+          ls /usr/share/dotnet 2>/dev/null || echo "/usr/share/dotnet not present"
+
+      - name: "setup-dotnet v4 (Pass 1 + Pass 2)"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: "AFTER - v4 result (Pass 1 adds LTS runtime from scratch)"
+        run: |
+          echo "DOTNET_ROOT = $DOTNET_ROOT"
+          dotnet --version
+          dotnet --list-sdks
+          dotnet --list-runtimes
+          for p in /root/.dotnet/host/fxr /usr/share/dotnet/host/fxr; do
+            [ -d "$p" ] && echo "$p:" && ls "$p" || true
+          done
+
+  issue642-in-container:
+    name: "issue_642 | ubuntu:24.04 container | 9.0.x"
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install prerequisites
+        run: apt-get update -qq && apt-get install -y -qq curl tar ca-certificates
+
+      - name: "BEFORE - confirm zero .NET in fresh container"
+        run: |
+          dotnet --version 2>/dev/null || echo "(no dotnet — clean slate confirmed)"
+          ls /root/.dotnet 2>/dev/null || echo "/root/.dotnet not present"
+
+      - name: "setup-dotnet issue_642 (Pass 2 only)"
+        uses: chiranjib-swain/setup-dotnet@issue_642
+        with:
+          dotnet-version: 9.0.x
+
+      - name: "AFTER - issue_642 result (no LTS runtime — SDK installer only)"
+        run: |
+          echo "DOTNET_ROOT = $DOTNET_ROOT"
+          dotnet --version
+          dotnet --list-sdks
+          dotnet --list-runtimes
+          for p in /root/.dotnet/host/fxr /usr/share/dotnet/host/fxr; do
+            [ -d "$p" ] && echo "$p:" && ls "$p" || true
+          done
