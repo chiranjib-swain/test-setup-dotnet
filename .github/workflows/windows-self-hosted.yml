@@ -45,8 +45,7 @@ jobs:
           dotnet-version: |
             6.0.x
             7.0.x
-            8.0.x
-            9.0.x
+      
 
       - name: "AFTER - v4 result (Pass 1 + Pass 2)"
         shell: powershell
@@ -60,9 +59,17 @@ jobs:
           Write-Host "=== Runtimes ==="
           dotnet --list-runtimes
           Write-Host "=== host\fxr entries ==="
-          Get-ChildItem "$env:DOTNET_ROOT\host\fxr" | Select-Object Name
-          Write-Host "=== dotnet --info (Host + Architecture) ==="
-          dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
+          (Get-ChildItem "$env:DOTNET_ROOT\host\fxr").Name
+          Write-Host "=== Muxer binary ==="
+          $muxer = "$env:DOTNET_ROOT\dotnet.exe"
+          $vi    = (Get-Item $muxer).VersionInfo
+          Write-Host "Path           : $muxer"
+          Write-Host "Size           : $((Get-Item $muxer).Length) bytes"
+          Write-Host "ProductVersion : $($vi.ProductVersion)"
+          Write-Host "FileVersion    : $($vi.FileVersion)"
+          Write-Host "SHA256         : $((Get-FileHash $muxer -Algorithm SHA256).Hash)"
+          Write-Host "=== dotnet --info ==="
+          dotnet --info 2>&1
 
       - name: "Locate test project"
         shell: powershell
@@ -114,8 +121,6 @@ jobs:
           dotnet-version: |
             6.0.x
             7.0.x
-            8.0.x
-            9.0.x
 
       - name: "AFTER - issue_642 result (no LTS pre-pass)"
         shell: powershell
@@ -129,9 +134,17 @@ jobs:
           Write-Host "=== Runtimes ==="
           dotnet --list-runtimes
           Write-Host "=== host\fxr entries ==="
-          Get-ChildItem "$env:DOTNET_ROOT\host\fxr" | Select-Object Name
-          Write-Host "=== dotnet --info (Host + Architecture) ==="
-          dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
+          (Get-ChildItem "$env:DOTNET_ROOT\host\fxr").Name
+          Write-Host "=== Muxer binary ==="
+          $muxer = "$env:DOTNET_ROOT\dotnet.exe"
+          $vi    = (Get-Item $muxer).VersionInfo
+          Write-Host "Path           : $muxer"
+          Write-Host "Size           : $((Get-Item $muxer).Length) bytes"
+          Write-Host "ProductVersion : $($vi.ProductVersion)"
+          Write-Host "FileVersion    : $($vi.FileVersion)"
+          Write-Host "SHA256         : $((Get-FileHash $muxer -Algorithm SHA256).Hash)"
+          Write-Host "=== dotnet --info ==="
+          dotnet --info 2>&1
 
       - name: "Locate test project"
         shell: powershell
