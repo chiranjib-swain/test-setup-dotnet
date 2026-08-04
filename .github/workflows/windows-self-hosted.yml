@@ -59,7 +59,7 @@ jobs:
           dotnet --list-sdks
           Write-Host "=== Runtimes ==="
           dotnet --list-runtimes
-          Write-Host '=== host\fxr entries ==='
+          Write-Host "=== host\fxr entries ==="
           Get-ChildItem "$env:DOTNET_ROOT\host\fxr" | Select-Object Name
           Write-Host "=== dotnet --info (Host + Architecture) ==="
           dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
@@ -114,7 +114,7 @@ jobs:
           dotnet --list-sdks
           Write-Host "=== Runtimes ==="
           dotnet --list-runtimes
-          Write-Host '=== host\fxr entries ==='
+          Write-Host "=== host\fxr entries ==="
           Get-ChildItem "$env:DOTNET_ROOT\host\fxr" | Select-Object Name
           Write-Host "=== dotnet --info (Host + Architecture) ==="
           dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
