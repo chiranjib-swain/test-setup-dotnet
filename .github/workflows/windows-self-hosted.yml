@@ -35,7 +35,7 @@ jobs:
           dotnet --version 2>$null
           if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet — clean slate confirmed)" }
           Write-Host "C:\Program Files\dotnet exists: $(Test-Path 'C:\Program Files\dotnet')"
-          Write-Host ".dotnet exists: $(Test-Path '$env:USERPROFILE\.dotnet')"
+          Write-Host ".dotnet exists: $(Test-Path ($env:USERPROFILE + '\.dotnet'))"
 
       - uses: actions/checkout@v4
 
