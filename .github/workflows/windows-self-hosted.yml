@@ -13,13 +13,13 @@ permissions:
 
 jobs:
 
-  # ── Job 1: v4 (Pass 1 + Pass 2) ────────────────────────────────────────────
+  # -- Job 1: v4 (Pass 1 + Pass 2) --------------------------------------------
   v4-self-hosted-x64:
     name: "v4 | self-hosted Windows x64 | 6.0+7.0+8.0+9.0"
     runs-on: [self-hosted, windows, x64]
     steps:
 
-      - name: "Clean slate — remove any preinstalled or leftover .NET"
+      - name: "Clean slate - remove any preinstalled or leftover .NET"
         if: ${{ inputs.clean_slate }}
         shell: powershell
         run: |
@@ -27,19 +27,19 @@ jobs:
           Remove-Item -Recurse -Force "$env:USERPROFILE\.dotnet"   -ErrorAction SilentlyContinue
           [System.Environment]::SetEnvironmentVariable("DOTNET_ROOT", $null, "Process")
           [System.Environment]::SetEnvironmentVariable("DOTNET_ROOT", $null, "User")
-          Write-Host "Clean slate confirmed — .NET directories removed"
+          Write-Host "Clean slate confirmed - .NET directories removed"
 
-      - name: "BEFORE — verify machine state"
+      - name: "BEFORE - verify machine state"
         shell: powershell
         run: |
           dotnet --version 2>$null
-          if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet — clean slate confirmed)" }
+          if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet - clean slate confirmed)" }
           Write-Host "C:\Program Files\dotnet exists: $(Test-Path 'C:\Program Files\dotnet')"
           Write-Host ".dotnet exists: $(Test-Path ($env:USERPROFILE + '\.dotnet'))"
 
       - uses: actions/checkout@v4
 
-      - name: "setup-dotnet v4 — EOL 6.0+7.0 + current 8.0+9.0"
+      - name: "setup-dotnet v4 - EOL 6.0+7.0 + current 8.0+9.0"
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -48,7 +48,7 @@ jobs:
             8.0.x
             9.0.x
 
-      - name: "AFTER — v4 result (Pass 1 + Pass 2)"
+      - name: "AFTER - v4 result (Pass 1 + Pass 2)"
         shell: powershell
         run: |
           Write-Host "=== DOTNET_ROOT ==="
@@ -69,13 +69,13 @@ jobs:
         run: dotnet build __tests__/e2e-test-csproj/test.csproj
 
 
-  # ── Job 2: issue_642 (Pass 2 only) ─────────────────────────────────────────
+  # -- Job 2: issue_642 (Pass 2 only) -----------------------------------------
   issue642-self-hosted-x64:
     name: "issue_642 | self-hosted Windows x64 | 6.0+7.0+8.0+9.0"
     runs-on: [self-hosted, windows, x64]
     steps:
 
-      - name: "Clean slate — remove .NET left from previous job"
+      - name: "Clean slate - remove .NET left from previous job"
         if: ${{ inputs.clean_slate }}
         shell: powershell
         run: |
@@ -85,16 +85,16 @@ jobs:
           [System.Environment]::SetEnvironmentVariable("DOTNET_ROOT", $null, "User")
           Write-Host "Clean slate confirmed"
 
-      - name: "BEFORE — verify machine state"
+      - name: "BEFORE - verify machine state"
         shell: powershell
         run: |
           dotnet --version 2>$null
-          if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet — clean slate confirmed)" }
+          if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet - clean slate confirmed)" }
           Write-Host "C:\Program Files\dotnet exists: $(Test-Path 'C:\Program Files\dotnet')"
 
       - uses: actions/checkout@v4
 
-      - name: "setup-dotnet issue_642 — EOL 6.0+7.0 + current 8.0+9.0 (Pass 2 only)"
+      - name: "setup-dotnet issue_642 - EOL 6.0+7.0 + current 8.0+9.0 (Pass 2 only)"
         uses: chiranjib-swain/setup-dotnet@issue_642
         with:
           dotnet-version: |
@@ -103,7 +103,7 @@ jobs:
             8.0.x
             9.0.x
 
-      - name: "AFTER — issue_642 result (no LTS pre-pass)"
+      - name: "AFTER - issue_642 result (no LTS pre-pass)"
         shell: powershell
         run: |
           Write-Host "=== DOTNET_ROOT ==="
