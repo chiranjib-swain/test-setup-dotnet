@@ -32,7 +32,7 @@ jobs:
       - name: "BEFORE - verify machine state"
         shell: powershell
         run: |
-          dotnet --version 2>$null
+          try { dotnet --version 2>$null } catch {}
           if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet - clean slate confirmed)" }
           Write-Host "C:\Program Files\dotnet exists: $(Test-Path 'C:\Program Files\dotnet')"
           Write-Host ".dotnet exists: $(Test-Path ($env:USERPROFILE + '\.dotnet'))"
@@ -88,7 +88,7 @@ jobs:
       - name: "BEFORE - verify machine state"
         shell: powershell
         run: |
-          dotnet --version 2>$null
+          try { dotnet --version 2>$null } catch {}
           if ($LASTEXITCODE -ne 0) { Write-Host "(no dotnet - clean slate confirmed)" }
           Write-Host "C:\Program Files\dotnet exists: $(Test-Path 'C:\Program Files\dotnet')"
 
