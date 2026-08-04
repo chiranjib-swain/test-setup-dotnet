@@ -64,9 +64,23 @@ jobs:
           Write-Host "=== dotnet --info (Host + Architecture) ==="
           dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
 
+      - name: "Locate test project"
+        shell: powershell
+        run: |
+          Get-ChildItem -Recurse -Filter *.csproj | Select-Object FullName
+
       - name: "Build test project"
         shell: powershell
-        run: dotnet build __tests__/e2e-test-csproj/test.csproj
+        run: |
+          $project = Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\obj\\|\\bin\\' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $project) {
+            Write-Error "No .csproj file found in the repository checkout"
+            exit 1
+          }
+          Write-Host "Building project: $project"
+          dotnet build $project
 
 
   # -- Job 2: issue_642 (Pass 2 only) -----------------------------------------
@@ -119,6 +133,20 @@ jobs:
           Write-Host "=== dotnet --info (Host + Architecture) ==="
           dotnet --info | Select-String "Version|Architecture|Commit" | Select-Object -First 6
 
+      - name: "Locate test project"
+        shell: powershell
+        run: |
+          Get-ChildItem -Recurse -Filter *.csproj | Select-Object FullName
+
       - name: "Build test project"
         shell: powershell
-        run: dotnet build __tests__/e2e-test-csproj/test.csproj
+        run: |
+          $project = Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\obj\\|\\bin\\' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $project) {
+            Write-Error "No .csproj file found in the repository checkout"
+            exit 1
+          }
+          Write-Host "Building project: $project"
+          dotnet build $project
